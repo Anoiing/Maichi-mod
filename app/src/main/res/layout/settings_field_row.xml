@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:minHeight="54dp"
+    android:orientation="horizontal"
+    android:paddingVertical="3dp">
+
+    <TextView
+        android:id="@+id/setting_label"
+        style="@style/Widget.Maichi.Label"
+        android:layout_width="@dimen/settings_label_width" />
+
+    <TextView
+        android:id="@+id/setting_value"
+        style="@style/Widget.Maichi.Label"
+        android:layout_width="0dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:fontFeatureSettings="tnum"
+        android:textColor="@color/text" />
+
+    <Button
+        android:id="@+id/edit_setting"
+        style="@style/Widget.Maichi.SettingsAction"
+        android:drawableStart="@drawable/ic_edit"
+        android:text="@string/edit" />
+</LinearLayout>

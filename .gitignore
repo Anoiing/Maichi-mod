@@ -1,0 +1,7 @@
+/.gradle/
+/.idea/
+/.maichi-fixtures/
+/local.properties
+**/build/
+/app/src/debug/assets/maichi-local/
+.DS_Store

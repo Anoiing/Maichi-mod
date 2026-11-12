@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#151619</color>
+    <color name="panel">#222429</color>
+    <color name="divider">#3B3E43</color>
+    <color name="amber">#F0C795</color>
+    <color name="text">#F4F1EB</color>
+    <color name="secondary_text">#C1C2C4</color>
+    <color name="muted_text">#9C9EA3</color>
+    <color name="black">#0D0E10</color>
+    <color name="on_amber">#261C15</color>
+    <color name="on_amber_secondary">#493629</color>
+    <color name="status_ready">#A1D1B3</color>
+    <color name="status_error">#F0AD9B</color>
+    <color name="sources_text">#E9F3FC</color>
+    <color name="sources_secondary">#BDCDDF</color>
+    <color name="sources_muted">#92A8BE</color>
+    <color name="sources_accent">#A4E2E7</color>
+    <color name="sources_divider">#34475E</color>
+</resources>

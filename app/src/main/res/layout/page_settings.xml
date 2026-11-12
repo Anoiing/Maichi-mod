@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.maichimod.prototype.ContentLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settings_page"
+    style="@style/Widget.Maichi.Screen"
+    android:focusableInTouchMode="true"
+    android:visibility="gone">
+
+    <FrameLayout style="@style/Widget.Maichi.PageHeader">
+        <Button
+            android:id="@+id/settings_back"
+            style="@style/Widget.Maichi.PageBack"
+            android:text="@string/home" />
+
+        <TextView
+            style="@style/Widget.Maichi.PageTitle"
+            android:text="@string/settings" />
+
+        <Button
+            android:id="@+id/connection_mode_button"
+            style="@style/Widget.Maichi.ConnectionModeButton"
+            android:layout_gravity="end|center_vertical"
+            android:text="@string/connection_mode" />
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/page_gap"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <GridLayout
+            android:id="@+id/settings_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alignmentMode="alignBounds"
+            android:columnCount="@integer/settings_columns"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/local_section"
+                style="@style/Widget.Maichi.Section"
+                android:layout_marginEnd="@dimen/settings_column_gap"
+                android:layout_rowSpan="@integer/settings_local_row_span">
+
+                <TextView
+                    style="@style/Widget.Maichi.SectionTitle"
+                    android:text="@string/local_parameters" />
+
+                <LinearLayout
+                    android:id="@+id/local_parameters"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@color/divider" />
+
+                <TextView
+                    android:id="@+id/settings_connection_status"
+                    style="@style/Widget.Maichi.Status"
+                    android:layout_gravity="start"
+                    android:layout_marginTop="12dp"
+                    android:accessibilityLiveRegion="polite" />
+
+                <TextView
+                    android:id="@+id/ethernet_details"
+                    style="@style/Widget.Maichi.Label"
+                    android:layout_marginTop="8dp"
+                    android:lineSpacingExtra="3dp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/retry_ethernet"
+                    style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/retry_monitor"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/peer_section"
+                style="@style/Widget.Maichi.Section"
+                android:layout_marginStart="@dimen/settings_column_gap"
+                android:layout_marginTop="@dimen/settings_peer_top_gap">
+
+                <TextView
+                    style="@style/Widget.Maichi.SectionTitle"
+                    android:text="@string/intercom_devices" />
+
+                <LinearLayout
+                    android:id="@+id/peer_parameters"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/volume_section"
+                style="@style/Widget.Maichi.Section"
+                android:layout_marginStart="@dimen/settings_column_gap"
+                android:layout_marginTop="@dimen/page_gap">
+
+                <TextView
+                    style="@style/Widget.Maichi.SectionTitle"
+                    android:text="@string/volume" />
+
+                <include
+                    android:id="@+id/media_volume"
+                    layout="@layout/volume_control"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/page_gap" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="@color/divider" />
+
+                <include
+                    android:id="@+id/call_volume"
+                    layout="@layout/volume_control" />
+
+                <TextView
+                    android:id="@+id/volume_hint"
+                    style="@style/Widget.Maichi.Label"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/volume_immediate"
+                    android:textColor="@color/muted_text" />
+            </LinearLayout>
+        </GridLayout>
+    </ScrollView>
+</com.maichimod.prototype.ContentLayout>

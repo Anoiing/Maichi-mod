@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/volume_label"
+        style="@style/Widget.Maichi.Label"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:textColor="@color/text" />
+
+    <Button
+        android:id="@+id/volume_decrease"
+        style="@style/Widget.Maichi.VolumeButton"
+        android:text="@string/minus" />
+
+    <TextView
+        android:id="@+id/volume_value"
+        style="@style/Widget.Maichi.Label"
+        android:minWidth="@dimen/volume_value_width"
+        android:accessibilityLiveRegion="polite"
+        android:fontFamily="sans-serif-medium"
+        android:fontFeatureSettings="tnum"
+        android:gravity="center"
+        android:paddingHorizontal="4dp"
+        android:textColor="@color/amber" />
+
+    <Button
+        android:id="@+id/volume_increase"
+        style="@style/Widget.Maichi.VolumeButton"
+        android:text="@string/plus" />
+</LinearLayout>

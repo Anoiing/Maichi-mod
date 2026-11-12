@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="content_max_width">1040dp</dimen>
+    <dimen name="tile_row_max_height">276dp</dimen>
+    <dimen name="screen_gutter">24dp</dimen>
+    <dimen name="screen_vertical">12dp</dimen>
+    <dimen name="page_gap">12dp</dimen>
+    <dimen name="settings_column_gap">0dp</dimen>
+    <dimen name="settings_peer_top_gap">@dimen/page_gap</dimen>
+    <dimen name="page_header_height">52dp</dimen>
+    <dimen name="page_title_size">20sp</dimen>
+    <dimen name="home_header_height">64dp</dimen>
+    <dimen name="clock_size">40sp</dimen>
+    <dimen name="tile_gap">10dp</dimen>
+    <dimen name="tile_caption_inset">16dp</dimen>
+    <dimen name="tile_icon_size">68dp</dimen>
+    <dimen name="tile_icon_inset">12dp</dimen>
+    <dimen name="tile_title_size">24sp</dimen>
+    <dimen name="label_size">14sp</dimen>
+    <dimen name="section_inset">14dp</dimen>
+    <dimen name="section_title_size">18sp</dimen>
+    <dimen name="settings_label_width">74dp</dimen>
+    <dimen name="volume_value_width">54dp</dimen>
+    <dimen name="volume_button_size">48dp</dimen>
+</resources>

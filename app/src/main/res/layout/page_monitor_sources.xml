@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/monitor_sources"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/sources_background"
+    android:visibility="gone">
+
+    <com.maichimod.prototype.ContentLayout style="@style/Widget.Maichi.Screen">
+
+        <FrameLayout style="@style/Widget.Maichi.PageHeader">
+            <Button
+                android:id="@+id/sources_back"
+                style="@style/Widget.Maichi.PageBack"
+                android:drawableTint="@color/sources_secondary"
+                android:text="@string/home"
+                android:textColor="@color/sources_secondary" />
+
+            <TextView
+                style="@style/Widget.Maichi.PageTitle"
+                android:text="@string/monitor"
+                android:textColor="@color/sources_text" />
+
+            <TextView
+                android:id="@+id/sources_state"
+                style="@style/Widget.Maichi.Status"
+                android:textColor="@color/sources_secondary" />
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/sources_divider" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="0.85" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="5">
+
+            <com.maichimod.prototype.ContentLayout style="@style/Widget.Maichi.TileRow">
+
+                <LinearLayout
+                    android:id="@+id/unit_monitor"
+                    style="@style/Widget.Maichi.Tile"
+                    android:orientation="vertical"
+                    android:background="@drawable/source_tile_available">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1">
+
+                        <ImageView
+                            style="@style/Widget.Maichi.TileIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_monitor"
+                            android:tint="@color/sources_accent" />
+                    </FrameLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginHorizontal="@dimen/tile_caption_inset"
+                        android:alpha="0.32"
+                        android:background="@color/sources_accent" />
+
+                    <LinearLayout style="@style/Widget.Maichi.TileCaption">
+                        <TextView
+                            style="@style/Widget.Maichi.SourceName"
+                            android:drawableEnd="@drawable/ic_chevron_right"
+                            android:drawableTint="@color/sources_accent"
+                            android:text="@string/unit_door_station"
+                            android:textColor="@color/sources_text" />
+
+                        <TextView
+                            style="@style/Widget.Maichi.TileDetail"
+                            android:text="@string/view_camera"
+                            android:textColor="@color/sources_accent" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    style="@style/Widget.Maichi.Tile"
+                    android:orientation="vertical"
+                    android:layout_marginStart="@dimen/tile_gap"
+                    android:background="@drawable/source_tile_pending"
+                    android:clickable="false"
+                    android:focusable="false">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1">
+
+                        <ImageView
+                            style="@style/Widget.Maichi.TileIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_monitor"
+                            android:tint="@color/sources_muted" />
+                    </FrameLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginHorizontal="@dimen/tile_caption_inset"
+                        android:background="@color/sources_divider" />
+
+                    <LinearLayout style="@style/Widget.Maichi.TileCaption">
+                        <TextView
+                            style="@style/Widget.Maichi.SourceName"
+                            android:text="@string/basement_door_station_one"
+                            android:textColor="@color/sources_secondary" />
+
+                        <TextView
+                            style="@style/Widget.Maichi.TileDetail"
+                            android:text="@string/source_unavailable"
+                            android:textColor="@color/sources_muted" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    style="@style/Widget.Maichi.Tile"
+                    android:orientation="vertical"
+                    android:layout_marginStart="@dimen/tile_gap"
+                    android:background="@drawable/source_tile_pending"
+                    android:clickable="false"
+                    android:focusable="false">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1">
+
+                        <ImageView
+                            style="@style/Widget.Maichi.TileIcon"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_monitor"
+                            android:tint="@color/sources_muted" />
+                    </FrameLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginHorizontal="@dimen/tile_caption_inset"
+                        android:background="@color/sources_divider" />
+
+                    <LinearLayout style="@style/Widget.Maichi.TileCaption">
+                        <TextView
+                            style="@style/Widget.Maichi.SourceName"
+                            android:text="@string/basement_door_station_two"
+                            android:textColor="@color/sources_secondary" />
+
+                        <TextView
+                            style="@style/Widget.Maichi.TileDetail"
+                            android:text="@string/source_unavailable"
+                            android:textColor="@color/sources_muted" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.maichimod.prototype.ContentLayout>
+        </FrameLayout>
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="1.35" />
+    </com.maichimod.prototype.ContentLayout>
+</FrameLayout>

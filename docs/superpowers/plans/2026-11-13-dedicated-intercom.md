@@ -113,11 +113,11 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** Consumes 统一 IntercomState 和控制器具体方法；Produces 唯一来电 Activity。通知渲染是 Service 内的幂等方法；拒接通过显式 Service Intent 校验 CallKey，无需新增接收器/通知框架。通知接听进入可见来电页后提交操作，开锁只在本次来电页提供。
 
-- [ ] **Step 1: 写失败用例。** 覆盖旧通知/计时器、单向收听、视频降级、不确定开锁和不可用恢复入口。新增 `callOverExternalAppReturnsToExternalApp`、`themeRecreationPreservesListenerAndSettingsSection`、`lockedBootCallUsesDefaultThemeWithoutAppearanceRead`、`networkIconsRemainNonInteractive`：来电结束回米家而非强制首页，九种主题不影响监听，首次解锁前不读取 appearance，网络图标不变操作入口。
-- [ ] **Step 2: 验证失败。** 在 API 31/36 隔离模拟器运行测试；授权状态与门禁传输使用测试配置，不触碰真实门锁。
-- [ ] **Step 3: 整体搬迁来电交互。** 搬迁现有 renderCall/按钮/权限方法，复用 page_call、MedioraUi 和主题资源；正常解锁后按 Appearance 应用主题，首次解锁前使用默认资源。来电页采用通知临时 Activity 的独立任务：空 taskAffinity、excludeFromRecents、singleTask，启动使用 NEW_TASK/CLEAR_TASK，并按 CallKey 去重；关闭只结束临时任务，回原前台/锁屏，不强制拉起主页面。继续使用当前稳定 insets 做法。主页面保留 settings_section、settings_dialog 与草稿恢复；删除旧来电页和资源字段。故障反馈加在本机与网络/对应页面，不新增顶层分组或点击网络图标。
-- [ ] **Step 4: 验证交互矩阵。** 覆盖 A01～A12、C01～C18、M01～M07、O01～O08；在九种主题与系统菜单展开时检验来电页尺寸、对比、稳定边距和控件状态。监控结束不重开、四分组/草稿可恢复、米家缺失保留已有提示；解锁前后主题读取安全。3 秒异常说明仅保留本次界面，不阻断下一通，重复打开不重建监听。
-- [ ] **Step 5: 清理并提交。** MainActivity 不再存在来电页渲染/权限回调的第二实现；状态文案只有一份事实来源，建议 `refactor: isolate lockscreen call interaction and recovery feedback`。
+- [x] **Step 1: 写失败用例。** 覆盖旧通知/计时器、单向收听、视频降级、不确定开锁和不可用恢复入口。新增 `callOverExternalAppReturnsToExternalApp`、`themeRecreationPreservesListenerAndSettingsSection`、`lockedBootCallUsesDefaultThemeWithoutAppearanceRead`、`networkIconsRemainNonInteractive`：来电结束回米家而非强制首页，九种主题不影响监听，首次解锁前不读取 appearance，网络图标不变操作入口。
+- [x] **Step 2: 验证失败。** 在 API 31/36 隔离模拟器运行测试；授权状态与门禁传输使用测试配置，不触碰真实门锁。
+- [x] **Step 3: 整体搬迁来电交互。** 搬迁现有 renderCall/按钮/权限方法，复用 page_call、MedioraUi 和主题资源；正常解锁后按 Appearance 应用主题，首次解锁前使用默认资源。来电页采用通知临时 Activity 的独立任务：空 taskAffinity、excludeFromRecents、singleTask，启动使用 NEW_TASK/CLEAR_TOP/SINGLE_TOP，并按 CallKey 去重；复用通知不使用 CLEAR_TASK，防止旧通知在标识校验前销毁新来电界面；关闭只结束临时任务，回原前台/锁屏，不强制拉起主页面。继续使用当前稳定 insets 做法。主页面保留 settings_section、settings_dialog 与草稿恢复；删除旧来电页和资源字段。故障反馈加在本机与网络/对应页面，不新增顶层分组或点击网络图标。
+- [x] **Step 4: 验证交互矩阵。** 覆盖 A01～A12、C01～C18、M01～M07、O01～O08；在九种主题与系统菜单展开时检验来电页尺寸、对比、稳定边距和控件状态。监控结束不重开、四分组/草稿可恢复、米家缺失保留已有提示；解锁前后主题读取安全。3 秒异常说明仅保留本次界面，不阻断下一通，重复打开不重建监听。
+- [x] **Step 5: 清理并提交。** MainActivity 不再存在来电页渲染/权限回调的第二实现；状态文案只有一份事实来源，建议 `refactor: isolate lockscreen call interaction and recovery feedback`。
 
 ## Task 4: P3 在现有连接流程内完成重连、启动和电源恢复
 

@@ -99,6 +99,29 @@ internal class MedioraSurface(context: Context, private val role: SurfaceRole) :
 }
 
 internal object MedioraUi {
+    @Suppress("DEPRECATION")
+    fun applyWindowInsets(activity: android.app.Activity, root: View) {
+        if (android.os.Build.VERSION.SDK_INT < 30) {
+            activity.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN
+            return
+        }
+        activity.window.setDecorFitsSystemWindows(false)
+        activity.window.insetsController?.apply {
+            systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(android.view.WindowInsets.Type.statusBars())
+        }
+        root.setOnApplyWindowInsetsListener { view, insets ->
+            // A revealed status bar overlays this fullscreen page; it must not shrink the workspace.
+            val types = android.view.WindowInsets.Type.navigationBars() or android.view.WindowInsets.Type.captionBar() or android.view.WindowInsets.Type.displayCutout()
+            val safe = insets.getInsetsIgnoringVisibility(types)
+            val ime = insets.getInsets(android.view.WindowInsets.Type.ime())
+            view.setPadding(maxOf(safe.left, ime.left), maxOf(safe.top, ime.top),
+                maxOf(safe.right, ime.right), maxOf(safe.bottom, ime.bottom))
+            insets
+        }
+        root.requestApplyInsets()
+    }
+
     fun role(context: Context, attrs: AttributeSet, fallback: SurfaceRole): SurfaceRole {
         val values = context.obtainStyledAttributes(attrs, R.styleable.MedioraSurface)
         val result = SurfaceRole.entries.getOrElse(values.getInt(R.styleable.MedioraSurface_surfaceRole, fallback.ordinal)) { fallback }

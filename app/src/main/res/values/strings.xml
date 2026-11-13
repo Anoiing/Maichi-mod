@@ -1,5 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="hang_up_not_submitted">挂断请求未能提交，请从来电通知重试。</string>
+    <string name="call_notification_channel">门禁来电</string>
+    <string name="retry_call_audio">恢复语音</string>
+    <string name="call_video_waiting">正在连接画面，可先接听</string>
+    <string name="call_video_missing">暂未收到画面，可继续接听或开锁</string>
+    <string name="call_video_stalled">画面已暂停，可继续通话或开锁</string>
+    <string name="call_ended">本次来电已结束</string>
+    <string name="call_remote_ended">对方已结束呼叫</string>
+    <string name="call_timed_out">呼叫超时，已结束本次接待</string>
+    <string name="call_connection_lost">连接已中断，正在恢复接待</string>
+    <string name="call_ending">正在结束呼叫</string>
+    <string name="call_answer_hint">接听后开启语音</string>
+    <string name="call_audio_connecting">正在连接语音</string>
+    <string name="call_audio_ready">双向通话中</string>
+    <string name="sample_call_audio">演示声音，不使用麦克风</string>
+    <string name="microphone_unavailable">麦克风暂不可用，对方听不到你</string>
+    <string name="playback_unavailable_microphone_active">暂时无法收听，麦克风仍在发送声音</string>
+    <string name="ringtone_muted">来电铃声已静音，请留意屏幕提示</string>
+    <string name="permission_settings_unavailable">暂时无法打开系统设置，请从系统设置中检查应用权限。</string>
+    <string name="call_screen_unavailable">暂时无法打开来电页，请通过来电通知接听。</string>
+    <string name="dedicated_terminal">专用终端</string>
+    <string name="enable_reception">启用门禁接待</string>
+    <string name="reception_disabled_help">接待已停用，后台和锁屏时不会接收来电。</string>
+    <string name="reception_background_help">接待持续在后台运行，请保持网络、供电并允许应用后台运行。</string>
+    <string name="reception_save_failed">接待开关未能保存，当前状态已恢复，请重试。</string>
+    <string name="call_notifications_blocked">接待受限：来电通知未开启。前台仍可接听，请开启通知以接收后台提示。</string>
+    <string name="full_screen_blocked">接待受限：锁屏来电展示未开启，请检查来电通知和全屏展示设置。</string>
+    <string name="enable_call_notifications">开启来电通知</string>
+    <string name="check_full_screen">检查锁屏来电</string>
+    <string name="check_background_settings">检查系统后台设置</string>
+    <string name="reset_configuration">重设接待参数</string>
+    <string name="reset_configuration_help">当前接待配置无法读取。重设将清除接待参数并停用接待，需要重新填写后启用；外观和其他设置保留。</string>
+    <string name="monitor_unavailable_during_call">通话中，暂不可主动监控</string>
+    <string name="monitor_unavailable_until_connected">准备就绪后可查看</string>
+
     <string name="ringtone_unavailable">铃声暂不可用，请通过来电提示接听。</string>
     <string name="unlock_waiting">正在等待发送结果，请勿重复开锁。</string>
     <string name="unlock_unconfirmed">开锁发送结果不确定，请现场确认，未自动重发。</string>
@@ -29,8 +64,8 @@
   <string name="simulate_call">模拟来电</string>
   <string name="unlock_sent">已发送开锁请求，请确认门锁</string>
   <string name="sample_unlock_sent">已模拟发送开锁请求</string>
-  <string name="call_audio_unavailable">语音设备未就绪，请检查音量和麦克风权限</string>
-  <string name="call_microphone_denied">未允许使用麦克风，当前只能收听</string>
+  <string name="call_audio_unavailable">语音暂不可用，仍可开锁或挂断</string>
+  <string name="call_microphone_denied">当前只能收听，对方听不到你</string>
   <string name="app_name">麦驰直连</string>
   <string name="home_monitor_detail">单元门 · 地库 1 · 地库 2</string>
   <string name="source_hint">选择门机，查看门前画面</string>

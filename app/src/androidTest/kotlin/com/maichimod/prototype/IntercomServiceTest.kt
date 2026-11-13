@@ -30,8 +30,11 @@ class IntercomServiceTest {
             val key = requireNotNull(owner.currentState.callKey)
             owner.answerCall(key)
             assertTrue(answered.await(2, TimeUnit.SECONDS))
-            fixture.scenario.recreate()
+            val activity = awaitIncomingCall(allowExisting = true)
+            val recreated = awaitIncomingCall { InstrumentationRegistry.getInstrumentation().runOnMainSync { activity.recreate() } }
+            assertNotSame(activity, recreated)
             assertEquals(key, owner.currentState.callKey)
+            fixture.shell("input keyevent KEYCODE_HOME")
             fixture.scenario.close()
             fixture.unbind()
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()

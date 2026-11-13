@@ -31,17 +31,19 @@ internal class AppSettings(
                 options = options.withField(field, legacy.getString(field.key, "").orEmpty())
                     ?: throw IllegalStateException("Invalid legacy field: ${field.key}")
             }
-            check(save(options)) { "Unable to migrate intercom configuration" }
+            check(save(options, initialEnabled = legacy.contains("wired"))) { "Unable to migrate intercom configuration" }
             options
         } catch (failure: ClassCastException) {
             throw IllegalStateException("Invalid legacy configuration", failure)
         }
     }
 
-    fun save(options: ConnectionOptions): Boolean = synchronized(lock) {
+    fun save(options: ConnectionOptions): Boolean = save(options, initialEnabled = false)
+
+    private fun save(options: ConnectionOptions, initialEnabled: Boolean): Boolean = synchronized(lock) {
         try {
             val previous = read(runtime)
-            val record = encode(options, runtimeFields).put("enabled", previous?.getBoolean("enabled") ?: true)
+            val record = encode(options, runtimeFields).put("enabled", previous?.getBoolean("enabled") ?: initialEnabled)
             val unlocked = userUnlocked()
             val previousNotes = if (unlocked) read(notes()) else null
             val newNotes = encode(options, noteFields)
@@ -61,7 +63,7 @@ internal class AppSettings(
     }
 
     fun isReceptionEnabled(): Boolean = synchronized(lock) {
-        val record = read(runtime) ?: return@synchronized true
+        val record = read(runtime) ?: return@synchronized false
         decode(record, null) // Never interpret a malformed canonical record as an enabled default.
         record.getBoolean("enabled")
     }
@@ -74,6 +76,24 @@ internal class AppSettings(
             write(runtime, record.put("enabled", enabled))
         } catch (failure: Exception) {
             Log.w(TAG, "Unable to save reception setting", failure)
+            false
+        }
+    }
+
+    fun resetConnectionOptions(): Boolean = synchronized(lock) {
+        if (!userUnlocked()) return@synchronized false
+        try {
+            val empty = ConnectionOptions(wired = true)
+            val notesFile = notes()
+            val previousNotes = readBytes(notesFile)
+            if (!write(notesFile, encode(empty, noteFields))) return@synchronized false
+            if (write(runtime, encode(empty, runtimeFields).put("enabled", false))) true
+            else {
+                if (previousNotes == null) notesFile.delete() else write(notesFile, previousNotes)
+                false
+            }
+        } catch (failure: Exception) {
+            Log.w(TAG, "Unable to reset intercom configuration", failure)
             false
         }
     }
@@ -102,21 +122,23 @@ internal class AppSettings(
         for (field in fields) put(field.key, options[field])
     }
 
-    private fun read(file: AtomicFile): JSONObject? {
-        try {
-            return JSONObject(file.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
-        } catch (failure: FileNotFoundException) {
+    private fun read(file: AtomicFile): JSONObject? = try {
+        readBytes(file)?.let { JSONObject(it.toString(Charsets.UTF_8)) }
+    } catch (failure: Exception) { throw IllegalStateException("Unable to read configuration", failure) }
+
+    private fun readBytes(file: AtomicFile): ByteArray? {
+        try { return file.readFully() }
+        catch (failure: FileNotFoundException) {
             if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return null
-            throw IllegalStateException("Unable to read configuration", failure)
-        } catch (failure: Exception) {
             throw IllegalStateException("Unable to read configuration", failure)
         }
     }
 
-    private fun write(file: AtomicFile, record: JSONObject): Boolean {
+    private fun write(file: AtomicFile, record: JSONObject): Boolean = write(file, record.toString().toByteArray(Charsets.UTF_8))
+
+    private fun write(file: AtomicFile, bytes: ByteArray): Boolean {
         var output: java.io.FileOutputStream? = null
         return try {
-            val bytes = record.toString().toByteArray(Charsets.UTF_8)
             output = file.startWrite()
             output.write(bytes)
             output.fd.sync()

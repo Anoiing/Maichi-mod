@@ -31,6 +31,8 @@ internal class IncomingCallSession<Frame : Any>(
 ) : Closeable {
     var status = CallStatus.IDLE
         private set
+    var endedLocally = false
+        private set
 
     private var peer: Inet4Address? = null
     private var queriedBy: Inet4Address? = null
@@ -65,6 +67,7 @@ internal class IncomingCallSession<Frame : Any>(
                     if (status == CallStatus.ANSWERED) return
                     if (peer == null) {
                         peer = datagram.source; sequence = 0; assembler.clear()
+                        endedLocally = false
                         setStatus(CallStatus.RINGING)
                         lastActivity = scheduler.nowMs
                         armTimeout(8_000)
@@ -150,6 +153,7 @@ internal class IncomingCallSession<Frame : Any>(
 
     private fun end(next: CallStatus, notify: Boolean) {
         val target = peer
+        if (target != null) endedLocally = notify && next == CallStatus.ENDED
         peer = null
         if (target != null) requireLookup = true
         periodic?.cancel(); periodic = null

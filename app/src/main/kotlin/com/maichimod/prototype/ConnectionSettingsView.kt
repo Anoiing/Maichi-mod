@@ -33,6 +33,7 @@ internal class ConnectionSettingsView(
     private val onSave: (ConnectionOptions, (Boolean) -> Unit) -> Unit,
     onRetry: () -> Unit,
     private val onThemeSelected: (ThemeColor) -> Unit = {},
+    private val onWindowFocusGained: () -> Unit = {},
     private val onSimulateCall: () -> Unit = {},
 ) {
     private val context = page.context
@@ -49,6 +50,13 @@ internal class ConnectionSettingsView(
     private val tabIds = listOf(R.id.settings_tab_local, R.id.settings_tab_devices, R.id.settings_tab_sound, R.id.settings_tab_appearance)
     private var dialog: AlertDialog? = null
     private var dialogField: ConnectionField? = null
+    private var dialogRestorable = true
+    private val reception = page.findViewById<CompoundButton>(R.id.reception_enabled)
+    private val receptionHint = page.findViewById<TextView>(R.id.reception_hint)
+    private val presentationSettings = page.findViewById<Button>(R.id.presentation_settings)
+    private val resetConfiguration = page.findViewById<View>(R.id.reset_configuration)
+    private var receptionSaving = false
+    private var receptionCanToggle = false
     private val values = buildMap {
         val local = page.findViewById<ViewGroup>(R.id.local_parameters)
         val peer = page.findViewById<ViewGroup>(R.id.peer_parameters)
@@ -111,6 +119,8 @@ internal class ConnectionSettingsView(
 
     fun selectedSection(): Int = tabIds.indexOf(sectionTabs.checkedRadioButtonId).coerceAtLeast(0)
 
+    fun hasWindowFocus(): Boolean = dialog?.window?.decorView?.hasWindowFocus() == true
+
     fun restoreSection(index: Int) {
         val selected = tabIds[index.coerceIn(tabIds.indices)]
         sectionTabs.check(selected)
@@ -151,6 +161,53 @@ internal class ConnectionSettingsView(
         }
     }
 
+    fun renderReception(state: IntercomState, available: Boolean) {
+        receptionCanToggle = state.configurationLoaded && !state.configurationError && available
+        reception.isChecked = state.enabled
+        reception.isEnabled = receptionCanToggle && !receptionSaving
+        receptionHint.text = when {
+            state.configurationError -> context.getString(R.string.settings_read_failed)
+            !state.enabled -> context.getString(R.string.reception_disabled_help)
+            state.link == LinkStatus.RECEPTION_BLOCKED -> state.issue ?: context.getString(R.string.reception_start_failed)
+            else -> buildList {
+                if (!state.notificationsAllowed) add(context.getString(R.string.call_notifications_blocked))
+                else if (!state.fullScreenAllowed) add(context.getString(R.string.full_screen_blocked))
+                if (state.ringerMuted) add(context.getString(R.string.ringtone_muted))
+                if (isEmpty()) add(context.getString(R.string.reception_background_help))
+            }.joinToString("\n")
+        }
+        presentationSettings.visibility = if (state.enabled && (!state.notificationsAllowed || !state.fullScreenAllowed)) View.VISIBLE else View.GONE
+        presentationSettings.setText(if (!state.notificationsAllowed) R.string.enable_call_notifications else R.string.check_full_screen)
+        resetConfiguration.visibility = if (state.configurationError) View.VISIBLE else View.GONE
+    }
+
+    fun setReceptionSaving(saving: Boolean) {
+        receptionSaving = saving
+        reception.isEnabled = receptionCanToggle && !saving
+    }
+
+    fun confirmReset(reset: ((Boolean) -> Unit) -> Unit) {
+        val confirmation = AlertDialog.Builder(context).setMessage(R.string.reset_configuration_help)
+            .setNegativeButton(R.string.cancel_setting, null).setPositiveButton(R.string.reset_configuration, null).create()
+        confirmation.setOnShowListener {
+            confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                confirmation.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                reset { saved ->
+                    if (saved) confirmation.dismiss()
+                    else {
+                        confirmation.setMessage(context.getString(R.string.settings_save_failed))
+                        confirmation.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                    }
+                }
+            }
+        }
+        showDialog(confirmation, titleResource = R.string.reset_configuration, restorable = false)
+        confirmation.getButton(AlertDialog.BUTTON_POSITIVE).apply {
+            MedioraUi.applySurface(this, SurfaceRole.DESTRUCTIVE)
+            setTextColor(MedioraUi.buttonText(context, SurfaceRole.DESTRUCTIVE))
+        }
+    }
+
     fun dismissDialog() {
         val previous = dialog ?: return
         dialog = null
@@ -161,6 +218,7 @@ internal class ConnectionSettingsView(
     }
 
     fun saveDialogState(): Bundle? {
+        if (!dialogRestorable) return null
         val current = dialog?.takeIf { it.isShowing } ?: return null
         val field = dialogField
         return Bundle().apply {
@@ -293,11 +351,16 @@ internal class ConnectionSettingsView(
         showDialog(picker)
     }
 
-    private fun showDialog(next: AlertDialog, field: ConnectionField? = null) {
+    private fun showDialog(next: AlertDialog, field: ConnectionField? = null, titleResource: Int? = null, restorable: Boolean = true) {
         dismissDialog()
         dialog = next
         dialogField = field
+        dialogRestorable = restorable
+        val focusListener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+            if (focused && dialog === next) onWindowFocusGained()
+        }
         next.setOnDismissListener {
+            next.window?.decorView?.viewTreeObserver?.takeIf { it.isAlive }?.removeOnWindowFocusChangeListener(focusListener)
             if (dialog === next) {
                 dialog = null
                 dialogField = null
@@ -312,7 +375,7 @@ internal class ConnectionSettingsView(
             setBackgroundResource(R.drawable.field_row)
         }
         val heading = TextView(context).apply {
-            text = if (field == null) context.getString(R.string.connection_mode) else context.getString(R.string.edit_field, context.getString(field.label))
+            text = if (titleResource != null) context.getString(titleResource) else if (field == null) context.getString(R.string.connection_mode) else context.getString(R.string.edit_field, context.getString(field.label))
             textSize = 20f
             setTextColor(context.getColor(R.color.text))
             typeface = if (Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.DEFAULT, 600, false) else Typeface.DEFAULT_BOLD
@@ -337,6 +400,7 @@ internal class ConnectionSettingsView(
         })
         next.setCustomTitle(header)
         next.show()
+        next.window?.decorView?.viewTreeObserver?.addOnWindowFocusChangeListener(focusListener)
         savedForeground = backdrop.foreground
         backdrop.foreground = ColorDrawable(context.getColor(R.color.dialog_scrim))
         val availableWidth = pageWidth() - (48 * density).toInt()

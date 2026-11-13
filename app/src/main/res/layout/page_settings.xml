@@ -47,6 +47,20 @@
                 <com.maichimod.prototype.MedioraButton android:id="@+id/retry_ethernet"
                     style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp"
                     android:text="@string/retry_monitor" android:visibility="gone" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/dedicated_terminal" />
+                <com.maichimod.prototype.MedioraSwitch android:id="@+id/reception_enabled"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:paddingVertical="8dp" android:text="@string/enable_reception"
+                    android:textColor="@color/text" android:textSize="@dimen/label_size" />
+                <TextView android:id="@+id/reception_hint" style="@style/Widget.Maichi.SettingsDescription"
+                    android:accessibilityLiveRegion="polite" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/presentation_settings" style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/enable_call_notifications" android:visibility="gone" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/background_settings" style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/check_background_settings" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/reset_configuration" style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/reset_configuration" android:visibility="gone" />
             </LinearLayout>
             <LinearLayout android:id="@+id/peer_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
                 <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/door_device_settings" />

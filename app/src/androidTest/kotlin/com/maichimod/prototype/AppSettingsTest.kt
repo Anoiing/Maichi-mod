@@ -13,6 +13,13 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppSettingsTest {
+    @Test fun freshInstallWaitsForExplicitReceptionChoice() {
+        val store = AppSettings(context()) { true }
+        store.load()
+        assertFalse(store.isReceptionEnabled())
+        assertTrue(store.setReceptionEnabled(true))
+        assertTrue(store.isReceptionEnabled())
+    }
     private val base = ApplicationProvider.getApplicationContext<Context>()
     private val name = "settings-test-${UUID.randomUUID()}"
     private val root = File(base.cacheDir, name).apply { mkdirs() }
@@ -45,6 +52,7 @@ class AppSettingsTest {
         ctx.getSharedPreferences("appearance", 0).edit().putString("theme", "charcoal").commit()
         val store = AppSettings(ctx) { true }
         val options = store.load()
+        assertTrue(store.isReceptionEnabled())
         assertTrue(options.wired)
         assertTrue(options.simulateTimeout)
         assertFalse(options.autoHangUpAfterUnlock)
@@ -77,6 +85,33 @@ class AppSettingsTest {
         val ctx = context()
         ctx.getSharedPreferences("MainActivity", 0).edit().putString("wired", "broken").commit()
         assertThrows(IllegalStateException::class.java) { AppSettings(ctx) { true }.load() }
+    }
+
+    @Test fun explicitConfigurationResetRepairsCorruptionWithReceptionDisabled() {
+        val ctx = context()
+        val store = AppSettings(ctx) { true }
+        assertTrue(store.save(ConnectionOptions(wired = true)))
+        ctx.getSharedPreferences("appearance", 0).edit().putString("theme", "rose").commit()
+        File(ctx.createDeviceProtectedStorageContext().filesDir, "intercom.json").writeText("broken")
+        assertTrue(store.resetConnectionOptions())
+        assertFalse(store.isReceptionEnabled())
+        assertTrue(store.load().wired)
+        assertFalse(store.load().hasTerminalIds)
+        assertEquals("rose", ctx.getSharedPreferences("appearance", 0).getString("theme", null))
+    }
+
+    @Test fun failedResetPreservesBothRecords() {
+        val ctx = context()
+        val store = AppSettings(ctx) { true }
+        assertTrue(store.save(ConnectionOptions(wired = true).withField(ConnectionField.CENTER_IP, "192.0.2.30")!!))
+        val runtime = File(ctx.createDeviceProtectedStorageContext().filesDir, "intercom.json")
+        runtime.writeText("broken")
+        val notes = File(ctx.filesDir, "intercom-notes.json").readBytes()
+        val blocked = File(runtime.path + ".new").apply { mkdirs() }
+        File(blocked, "blocker").writeText("x")
+        assertFalse(store.resetConnectionOptions())
+        assertEquals("broken", runtime.readText())
+        assertArrayEquals(notes, File(ctx.filesDir, "intercom-notes.json").readBytes())
     }
 
     @Test fun failedSavePreservesActiveIdentity() {

@@ -17,7 +17,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ConnectionCallsTest {
-    @Test fun slowUnlockStaysPendingUntilItsResultAndStillEnforcesCooldown() = Fixture().use { fixture ->
+    @Test fun slowUnlockStaysPendingUntilItsResultAndStillEnforcesCooldown() = WiredIntercomFixture().use { fixture ->
         fixture.ring()
         val key = requireNotNull(fixture.owner.currentState.callKey)
         val sending = CountDownLatch(1)
@@ -52,7 +52,7 @@ class ConnectionCallsTest {
         } finally { release.countDown() }
     }
 
-    @Test fun obsoleteProcessKeyCannotAnswerOrUnlockTheCurrentCall() = Fixture().use { fixture ->
+    @Test fun obsoleteProcessKeyCannotAnswerOrUnlockTheCurrentCall() = WiredIntercomFixture().use { fixture ->
         fixture.ring()
         val key = requireNotNull(fixture.owner.currentState.callKey)
         val result = CountDownLatch(1)
@@ -66,7 +66,7 @@ class ConnectionCallsTest {
         assertEquals(0, fixture.commands(6))
     }
 
-    @Test fun uncertainUnlockIsReportedOnceAndNeverRetried() = Fixture().use { fixture ->
+    @Test fun uncertainUnlockIsReportedOnceAndNeverRetried() = WiredIntercomFixture().use { fixture ->
         fixture.ring()
         fixture.onSend = { if (it.getOrNull(10)?.toInt() == 6) throw IOException("Injected uncertain send") }
         val result = CountDownLatch(1)
@@ -84,7 +84,7 @@ class ConnectionCallsTest {
         assertEquals(1, fixture.commands(6))
     }
 
-    @Test fun queuedUnlockExpiresBeforeItCanReachTheWire() = Fixture().use { fixture ->
+    @Test fun queuedUnlockExpiresBeforeItCanReachTheWire() = WiredIntercomFixture().use { fixture ->
         val release = CountDownLatch(1)
         fixture.onSend = { if (it.getOrNull(10)?.toInt() == 3) check(release.await(4, TimeUnit.SECONDS)) }
         try {
@@ -101,7 +101,7 @@ class ConnectionCallsTest {
         } finally { release.countDown() }
     }
 
-    @Test fun garageMonitorDoesNotReplaceIncomingHouseholdProfile() = Fixture().use { fixture ->
+    @Test fun garageMonitorDoesNotReplaceIncomingHouseholdProfile() = WiredIntercomFixture().use { fixture ->
         fixture.owner.openMonitor(MonitorSource.BASEMENT_ONE)
         fixture.ring()
         assertEquals(CallStatus.RINGING, fixture.owner.currentState.call)
@@ -109,41 +109,4 @@ class ConnectionCallsTest {
         assertTrue(fixture.owner.currentState.ready)
     }
 
-    private class Fixture : Closeable {
-        val context = IsolatedContext()
-        val sent = CopyOnWriteArrayList<ByteArray>()
-        @Volatile var onSend: (ByteArray) -> Unit = {}
-        lateinit var receive: (ReceivedDatagram) -> Unit
-        val owner = AppConnection(context, openEthernet = { _, incoming, _ ->
-            receive = incoming
-            object : DatagramTransport {
-                override fun send(localPort: Int, destination: Inet4Address, payload: ByteArray) {
-                    sent.add(payload.copyOf()); onSend(payload)
-                }
-                override fun close() = Unit
-            }
-        }, openLinks = { _, _, _, changed -> changed(testLink()); Closeable {} })
-        init {
-            val ready = CountDownLatch(1)
-            val subscription = owner.observe(object : IntercomObserver {
-                override fun onState(state: IntercomState) { if (state.link == LinkStatus.WIRED_CONNECTED) ready.countDown() }
-            })
-            owner.start(wiredTestOptions().withField(ConnectionField.BASEMENT_ONE_ID, "00000000002")!!)
-            check(ready.await(3, TimeUnit.SECONDS))
-            subscription.cancel()
-        }
-        fun ring() {
-            val ringing = CountDownLatch(1)
-            val subscription = owner.observe(object : IntercomObserver {
-                override fun onState(state: IntercomState) { if (state.call == CallStatus.RINGING) ringing.countDown() }
-            })
-            receive(ReceivedDatagram(DEMO_PEER_IP, 10000, 10000,
-                CallPackets.encodeSignal(CallCommand.NEGOTIATE, DEMO_PROFILE, DEMO_PEER_IP).copyOf(256).apply {
-                    this[10] = 1; this[14] = 0; this[15] = 1
-                }))
-            assertTrue(ringing.await(3, TimeUnit.SECONDS)); subscription.cancel()
-        }
-        fun commands(type: Int) = sent.count { it.size >= 80 && it[8] == 0xb7.toByte() && it[10].toInt() == type }
-        override fun close() { owner.close(); context.clear(); InstrumentationRegistry.getInstrumentation().waitForIdleSync() }
-    }
 }

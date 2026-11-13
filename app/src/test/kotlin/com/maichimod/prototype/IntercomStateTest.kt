@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class IntercomStateTest {
+    @Test fun endedSummaryExpiresWithoutExtendingWhenOtherStateChanges() {
+        val state = IntercomState(call = CallStatus.TIMED_OUT, callKey = CallKey("run", 1),
+            callEndReason = CallEndReason.TIMED_OUT, callEndedAtMs = 10_000)
+        assertEquals(1L, state.endSummaryRemainingMs(12_999))
+        assertEquals(0L, state.copy(playback = AudioHealth.UNAVAILABLE).endSummaryRemainingMs(13_000))
+        assertEquals(0L, state.copy(callEndReason = CallEndReason.LOCAL).endSummaryRemainingMs(10_000))
+    }
+
     @Test fun disabledReceptionNeverOffersNetworkCommands() {
         val state = IntercomState(link = LinkStatus.WIRED_CONNECTED, enabled = false)
         assertFalse(state.canMonitor)

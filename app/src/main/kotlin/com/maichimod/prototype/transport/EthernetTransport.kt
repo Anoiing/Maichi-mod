@@ -99,23 +99,24 @@ internal class EthernetTransport(
     link: WiredLink,
     private val onReceive: (ReceivedDatagram) -> Unit,
     private val onFailure: (IOException) -> Unit,
+    private val createSocket: () -> DatagramSocket = { DatagramSocket(null) },
 ) : DatagramTransport {
     private val closed = AtomicBoolean(false)
     private val sockets = openSockets(link)
 
     init {
-        sockets.forEach { (port, socket) ->
-            Thread({ receive(port, socket) }, "Maichi-UDP-$port").start()
+        sockets.forEachIndexed { index, (port, socket) ->
+            Thread({ receive(port, socket) }, "Maichi-UDP-$port-$index").start()
         }
     }
 
     override fun send(localPort: Int, destination: Inet4Address, payload: ByteArray) {
-        val socket = sockets[localPort] ?: throw SocketException("Unknown UDP port $localPort")
+        val socket = sockets.lastOrNull { it.first == localPort }?.second ?: throw SocketException("Unknown UDP port $localPort")
         socket.send(DatagramPacket(payload, payload.size, destination, localPort))
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) sockets.values.forEach(DatagramSocket::close)
+        if (closed.compareAndSet(false, true)) sockets.forEach { it.second.close() }
     }
 
     private fun receive(port: Int, socket: DatagramSocket) {
@@ -133,21 +134,26 @@ internal class EthernetTransport(
         }
     }
 
-    private fun openSockets(link: WiredLink): Map<Int, DatagramSocket> {
-        val opened = linkedMapOf<Int, DatagramSocket>()
+    private fun openSockets(link: WiredLink): List<Pair<Int, DatagramSocket>> {
+        val opened = mutableListOf<Pair<Int, DatagramSocket>>()
+        fun bind(port: Int, address: InetSocketAddress, reuse: Boolean) {
+            val socket = createSocket()
+            opened.add(port to socket)
+            link.network.bindSocket(socket)
+            socket.reuseAddress = reuse
+            socket.broadcast = port == MaichiPackets.DISCOVERY_PORT
+            socket.bind(address)
+        }
         try {
-            for (port in listOf(MaichiPackets.DISCOVERY_PORT, MaichiPackets.SESSION_PORT)) {
-                val socket = DatagramSocket(null)
-                opened[port] = socket
-                link.network.bindSocket(socket)
-                socket.broadcast = port == MaichiPackets.DISCOVERY_PORT
-                // Indoor discovery arrives at the subnet broadcast address, before the unicast call.
-                socket.bind(if (port == MaichiPackets.DISCOVERY_PORT) InetSocketAddress("0.0.0.0", port)
-                    else InetSocketAddress(link.address, port))
-            }
+            val discovery = MaichiPackets.DISCOVERY_PORT
+            // Wildcard receives broadcasts; replies must use the configured address on multi-address interfaces.
+            // Both discovery sockets receive, because unicast lookup can arrive on the address-bound socket.
+            bind(discovery, InetSocketAddress("0.0.0.0", discovery), reuse = true)
+            bind(discovery, InetSocketAddress(link.address, discovery), reuse = true)
+            bind(MaichiPackets.SESSION_PORT, InetSocketAddress(link.address, MaichiPackets.SESSION_PORT), reuse = false)
             return opened
         } catch (failure: Exception) {
-            opened.values.forEach(DatagramSocket::close)
+            opened.forEach { it.second.close() }
             throw failure
         }
     }

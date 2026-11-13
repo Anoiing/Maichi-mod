@@ -98,11 +98,11 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** Consumes 任务 1 控制器；Produces Service 的本地 Binder 暴露同一个控制器实例。CallAudio 继续只有一个实例，提供 `startRinging()`、`start(capture, send)`、`stop()`，通过现有错误回调扩展录音/播放失败类型，无需额外策略类。`unlockCall` 使用本次 CallKey 与三态结果，校验和冷却都直接收口在现有方法。
 
-- [ ] **Step 1: 写失败用例。** `allPagesAndExternalAppsKeepSameListener` 覆盖首页、门机选择、三路监控、四个设置分组/弹窗、主题 recreate、米家、后台、暗屏和锁屏：在网络/连接参数未变的纯界面操作中，Socket 实例恒为 1，离开/回到界面 close/start 增量为 0；`noBoundUiStillReceivesIncomingCall` 验证绑定数为 0 仍接待；`garageMonitorDoesNotReplaceIncomingHouseholdProfile` 验证单元门来电可打断地库。另测独立声音失败、旧 CallKey、不确定发送不重试和 60 秒响铃上限，复用既有 8 秒/3 秒/重复开锁用例。
-- [ ] **Step 2: 验证失败。** 运行新的会话 JVM 测试和 Service/声音设备测试；构造网络和声音的失败输入时使用现有依赖注入位置或文件内最小工厂，不能为测试建立一组通用管理器。
-- [ ] **Step 3: 移动所有权。** 使用启动式前台服务独立承载 AppConnection，UI 通过 Binder 绑定只是订阅，不使用仅绑定的 Service 生命周期；onUnbind 不停止接待。按网络设备交互使用 connectedDevice，接听后按条件启用 microphone。MainActivity.onStart 删除无条件 activateMode，改为幂等启用检查/绑定；onStop 只结束主动监控和取消本页订阅；onDestroy 不 close 共享连接。声音迁入 CallAudio/AppConnection，Service 不存第二份 CallStatus。显式停用才关闭监听；响铃、演示不录音。
-- [ ] **Step 4: 验证。** 全部现有会话/协议回放和本任务设备用例通过；检查同一通没有双重铃声、没有 Activity 持有声音资源，语音失败不误报网络断开。开锁发送前超过 1 秒可拒绝，已经发送中的等待超时只提示；1.5 秒冷却和发送完成后 3 秒挂断继续生效。系统 Home 与明确挂断分别测试。
-- [ ] **Step 5: 清理并提交。** 移除 MainActivity 的连接创建/关闭、声音字段和对应回调；不在 Service 再维护另一份 CallStatus。建议 `refactor: host intercom reception and audio outside activity`。
+- [x] **Step 1: 写失败用例。** `allPagesAndExternalAppsKeepSameListener` 覆盖首页、门机选择、三路监控、四个设置分组/弹窗、主题 recreate、米家、后台、暗屏和锁屏：在网络/连接参数未变的纯界面操作中，Socket 实例恒为 1，离开/回到界面 close/start 增量为 0；`noBoundUiStillReceivesIncomingCall` 验证绑定数为 0 仍接待；`garageMonitorDoesNotReplaceIncomingHouseholdProfile` 验证单元门来电可打断地库。另测独立声音失败、旧 CallKey、不确定发送不重试和 60 秒响铃上限，复用既有 8 秒/3 秒/重复开锁用例。
+- [x] **Step 2: 验证失败。** 运行新的会话 JVM 测试和 Service/声音设备测试；构造网络和声音的失败输入时使用现有依赖注入位置或文件内最小工厂，不能为测试建立一组通用管理器。
+- [x] **Step 3: 移动所有权。** 使用启动式前台服务独立承载 AppConnection，UI 通过 Binder 绑定只是订阅，不使用仅绑定的 Service 生命周期；onUnbind 不停止接待。按网络设备交互使用 connectedDevice，接听后按条件启用 microphone。MainActivity.onStart 删除无条件 activateMode，改为幂等启用检查/绑定；onStop 只结束主动监控和取消本页订阅；onDestroy 不 close 共享连接。声音迁入 CallAudio/AppConnection，Service 不存第二份 CallStatus。显式停用才关闭监听；响铃、演示不录音。
+- [x] **Step 4: 验证。** 全部现有会话/协议回放和本任务设备用例通过；检查同一通没有双重铃声、没有 Activity 持有声音资源，语音失败不误报网络断开。开锁发送前超过 1 秒可拒绝，已经发送中的等待超时只提示；1.5 秒冷却和发送完成后 3 秒挂断继续生效。系统 Home 与明确挂断分别测试。
+- [x] **Step 5: 清理并提交。** 移除 MainActivity 的连接创建/关闭、声音字段和对应回调；不在 Service 再维护另一份 CallStatus。建议 `refactor: host intercom reception and audio outside activity`。
 
 ## Task 3: P2 迁移锁屏来电页并补齐故障交互
 

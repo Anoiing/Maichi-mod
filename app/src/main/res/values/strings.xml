@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ringtone_unavailable">铃声暂不可用，请通过来电提示接听。</string>
+    <string name="unlock_waiting">正在等待发送结果，请勿重复开锁。</string>
+    <string name="unlock_unconfirmed">开锁发送结果不确定，请现场确认，未自动重发。</string>
+    <string name="unlock_rejected">本次开锁未发送，请确认来电仍在进行并稍后重试。</string>
+    <string name="reception_channel">门禁接待</string>
+    <string name="reception_restoring">正在恢复门禁接待</string>
+    <string name="reception_listening">门禁接待已启用</string>
+    <string name="reception_waiting">等待门禁网络或配置</string>
+    <string name="reception_stopped">门禁接待已停用</string>
+    <string name="reception_start_failed">门禁接待未能启动，请重新打开应用检查。</string>
     <string name="settings_read_failed">门禁配置读取失败，请检查配置后重新启用接待。</string>
     <string name="settings_save_failed">未能保存，通话中请稍后修改连接参数。输入内容已保留。</string>
   <string name="close_dialog">关闭</string>

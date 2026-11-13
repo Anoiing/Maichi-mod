@@ -71,6 +71,27 @@ class IncomingCallSessionTest {
         assertEquals(CallStatus.TIMED_OUT, session.status)
     }
 
+    @Test fun repeatedRingAndKeepAliveCannotExtendTheUnansweredSixtySecondLimit() {
+        session.receive(ring())
+        repeat(59) { clock.advance(1_000); session.receive(ring()) }
+        clock.advance(999)
+        assertEquals(CallStatus.RINGING, session.status)
+        clock.advance(1)
+        assertEquals(CallStatus.TIMED_OUT, session.status)
+        assertEquals(1, closeCount())
+    }
+
+    @Test fun answeringCancelsTheUnansweredRingDeadline() {
+        session.receive(ring())
+        repeat(50) { clock.advance(1_000); session.receive(ring()) }
+        session.answer()
+        repeat(30) {
+            clock.advance(1_000)
+            session.receive(rx(10000, CallPackets.encodeSignal(CallCommand.KEEP_ALIVE, DEMO_PROFILE, DEMO_PEER_IP)))
+        }
+        assertEquals(CallStatus.ANSWERED, session.status)
+    }
+
     @Test fun unlockCanHangUpExactlyThreeSecondsAfterSending() {
         session.receive(ring())
         assertTrue(session.unlock(autoHangUp = true))

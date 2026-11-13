@@ -3,10 +3,13 @@ package com.maichimod.prototype
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
-import android.media.Ringtone
-import android.media.RingtoneManager
 import android.content.res.ColorStateList
 import android.media.AudioManager
 import android.os.Build
@@ -29,22 +32,39 @@ import com.maichimod.prototype.session.TerminalState
 import com.maichimod.prototype.transport.WiredLink
 
 class MainActivity : Activity() {
-    private lateinit var connection: AppConnection
+    private var connection: AppConnection? = null
     private var subscription: com.maichimod.prototype.session.Cancellation? = null
-    private var configurationError = false
+    private var service: IntercomService? = null
+    private var bound = false
+    private var started = false
+    private var intercom = IntercomState(enabled = false)
+    private val updateUnlock = Runnable { if (callPage.isShown) renderCall(callStatus, displayedCallKey) }
+    private val binding = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            if (!started) return
+            service = (binder as IntercomService.LocalBinder).service
+            connection = service?.connection
+            subscription?.cancel()
+            subscription = connection?.observe(observer)
+        }
+        override fun onServiceDisconnected(name: ComponentName) {
+            subscription?.cancel(); subscription = null
+            connection = null; service = null
+            link = null
+            renderState()
+        }
+    }
     private lateinit var dashboard: View
     private lateinit var monitorSources: View
     private lateinit var monitorPage: View
     private lateinit var settingsPage: View
     private lateinit var callPage: View
     private lateinit var callPreview: ImageView
-    private lateinit var callAudio: CallAudio
     private var callStatus = CallStatus.IDLE
-    private var displayedCallToken = 0
+    private var displayedCallKey: CallKey? = null
     private var callReturnPage: View? = null
     private var callSettingsDraft: Bundle? = null
-    private var ringtone: Ringtone? = null
-    private var microphoneRequestCall: Int? = null
+    private var microphoneRequestCall: CallKey? = null
     private lateinit var sourceTiles: Map<MonitorSource, View>
     private lateinit var elevatorTile: View
     private lateinit var preview: ImageView
@@ -65,6 +85,28 @@ class MainActivity : Activity() {
     private var selectedSource = MonitorSource.UNIT
     private var unregisterBack: (() -> Unit)? = null
 
+    private val observer = object : IntercomObserver {
+        override fun onState(updated: IntercomState) {
+            intercom = updated
+            if (updated.configurationLoaded) options = updated.options
+            link = updated.link
+            wiredLink = updated.ethernet
+            state = updated.terminal
+            connectionSettings.renderOptions(options)
+            if (state.monitor == MonitorStatus.ENDED && monitorPage.visibility == View.VISIBLE) showPage(monitorSources)
+            if (updated.call != callStatus || updated.callKey != displayedCallKey || callPage.isShown) {
+                renderCall(updated.call, updated.callKey)
+            }
+            renderState()
+        }
+        override fun onMonitorFrame(frame: android.graphics.Bitmap) {
+            if (monitorPage.isShown && state.monitor == MonitorStatus.VIEWING) preview.setImageBitmap(frame)
+        }
+        override fun onCallFrame(frame: android.graphics.Bitmap) {
+            if (callPage.isShown) callPreview.setImageBitmap(frame)
+        }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         Appearance.apply(this)
         super.onCreate(savedInstanceState)
@@ -76,9 +118,6 @@ class MainActivity : Activity() {
         settingsPage = findViewById(R.id.settings_page)
         callPage = findViewById(R.id.call_page)
         callPreview = findViewById(R.id.call_preview)
-        callAudio = CallAudio(this) { runOnUiThread {
-            if (callStatus == CallStatus.ANSWERED) Toast.makeText(this, R.string.call_audio_unavailable, Toast.LENGTH_LONG).show()
-        } }
         sourceTiles = MonitorSource.entries.associateWith { findViewById(it.tile) }
         selectedSource = MonitorSource.entries.firstOrNull {
             it.name == savedInstanceState?.getString("monitor_source")
@@ -105,71 +144,42 @@ class MainActivity : Activity() {
         volumeControls = VolumeControls(settingsPage)
         volumeControlStream = AudioManager.STREAM_MUSIC
 
-        try { options = AppSettings(this).load() }
-        catch (_: IllegalStateException) {
-            configurationError = true
-            Toast.makeText(this, R.string.settings_read_failed, Toast.LENGTH_LONG).show()
-        }
-        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, { connection.retry() }, onThemeSelected = { theme ->
+        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, { connection?.retry() }, onThemeSelected = { theme ->
             Appearance.save(this, theme)
             recreate()
         }) {
             showPage(dashboard)
-            connection.simulateIncoming()
+            connection?.simulateIncoming()
         }
         connectionSettings.renderOptions(options)
         connectionSettings.restoreSection(savedInstanceState?.getInt("settings_section") ?: 0)
-        connection = AppConnection(this)
-        subscription = connection.observe(object : IntercomObserver {
-            override fun onState(updated: IntercomState) {
-                if (updated.link != null) options = updated.options
-                link = updated.link
-                wiredLink = updated.ethernet
-                state = updated.terminal
-                connectionSettings.renderOptions(options)
-                if (state.monitor == MonitorStatus.ENDED && monitorPage.visibility == View.VISIBLE) showPage(monitorSources)
-                if (updated.call != callStatus || (updated.callKey?.sequence ?: 0) != displayedCallToken) {
-                    renderCall(updated.call, updated.callKey?.sequence ?: 0)
-                }
-                renderState()
-            }
-            override fun onMonitorFrame(frame: android.graphics.Bitmap) {
-                if (monitorPage.isShown && state.monitor == MonitorStatus.VIEWING) preview.setImageBitmap(frame)
-            }
-            override fun onCallFrame(frame: android.graphics.Bitmap) {
-                if (callPage.isShown) callPreview.setImageBitmap(frame)
-            }
-            override fun onCallAudio(pcm: ByteArray) {
-                if (callStatus == CallStatus.ANSWERED) callAudio.enqueue(pcm)
-            }
-        })
         findViewById<View>(R.id.call_action).setOnClickListener {
             when (callStatus) {
                 CallStatus.RINGING -> answerCall()
-                CallStatus.ANSWERED -> connection.hangUpCall(displayedCallToken)
+                CallStatus.ANSWERED -> displayedCallKey?.let { connection?.hangUpCall(it) }
                 else -> Unit
             }
         }
-        findViewById<View>(R.id.call_back).setOnClickListener { connection.hangUpCall(displayedCallToken) }
-        findViewById<View>(R.id.unlock_call).setOnClickListener { button ->
-            val token = displayedCallToken
-            button.isActivated = true
-            button.isEnabled = false
-            connection.unlockCall(token, options.autoHangUpAfterUnlock) { sent ->
-                if (sent) Toast.makeText(this, if (options.wired) R.string.unlock_sent else R.string.sample_unlock_sent, Toast.LENGTH_LONG).show()
+        findViewById<View>(R.id.call_back).setOnClickListener { displayedCallKey?.let { connection?.hangUpCall(it) } }
+        findViewById<View>(R.id.unlock_call).setOnClickListener {
+            val key = displayedCallKey ?: return@setOnClickListener
+            connection?.unlockCall(key, options.autoHangUpAfterUnlock) { result ->
+                if (isDestroyed || displayedCallKey != key) return@unlockCall
+                Toast.makeText(this, when (result) {
+                    UnlockResult.SENT -> if (options.wired) R.string.unlock_sent else R.string.sample_unlock_sent
+                    UnlockResult.REJECTED -> R.string.unlock_rejected
+                    UnlockResult.UNCONFIRMED -> R.string.unlock_unconfirmed
+                }, Toast.LENGTH_LONG).show()
             }
-            button.postDelayed({
-                if (token == connection.callToken && callPage.isShown) { button.isActivated = false; button.isEnabled = true }
-            }, 1500)
         }
         findViewById<View>(R.id.monitor_tile).setOnClickListener { showPage(monitorSources) }
         findViewById<View>(R.id.mijia_tile).setOnClickListener { openMijia() }
         sourceTiles.forEach { (source, tile) -> tile.setOnClickListener { openMonitor(source) } }
-        elevatorTile.setOnClickListener { connection.callElevator() }
+        elevatorTile.setOnClickListener { connection?.callElevator() }
         findViewById<View>(R.id.sources_back).setOnClickListener { showPage(dashboard) }
         findViewById<View>(R.id.monitor_back).setOnClickListener { showPage(monitorSources) }
         retry.setOnClickListener {
-            if (link == LinkStatus.WIRED_ERROR) connection.retry() else openMonitor()
+            if (link == LinkStatus.WIRED_ERROR) connection?.retry() else openMonitor()
         }
         findViewById<View>(R.id.settings_button).setOnClickListener { showSettings() }
         findViewById<View>(R.id.settings_back).setOnClickListener { showPage(dashboard) }
@@ -180,22 +190,25 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        activateMode()
+        started = true
+        if (!IntercomService.ensureStarted(this)) Toast.makeText(this, R.string.reception_start_failed, Toast.LENGTH_LONG).show()
+        bound = bindService(Intent(this, IntercomService::class.java), binding, Context.BIND_AUTO_CREATE)
     }
 
     override fun onStop() {
-        if (monitorPage.visibility == View.VISIBLE) showPage(monitorSources)
-        callAudio.stop(); ringtone?.stop(); ringtone = null
-        if (callPage.isShown) { connection.hangUpCall(displayedCallToken); renderCall(CallStatus.ENDED) }
-        connection.stop()
+        if (monitorPage.isShown) showPage(monitorSources)
+        started = false
+        subscription?.cancel(); subscription = null
+        if (bound) unbindService(binding)
+        bound = false
+        connection = null; service = null
         super.onStop()
     }
 
     override fun onDestroy() {
         unregisterBack?.invoke()
         connectionSettings.dismissDialog()
-        subscription?.cancel()
-        connection.close()
+        callPage.removeCallbacks(updateUnlock)
         super.onDestroy()
     }
 
@@ -221,7 +234,7 @@ class MainActivity : Activity() {
 
     private fun navigateBack(): Boolean {
         when {
-            callPage.isShown -> connection.hangUpCall(displayedCallToken)
+            callPage.isShown -> displayedCallKey?.let { connection?.hangUpCall(it) }
             monitorPage.isShown -> showPage(monitorSources)
             monitorSources.isShown || settingsPage.isShown -> showPage(dashboard)
             else -> return false
@@ -256,14 +269,6 @@ class MainActivity : Activity() {
         return handled
     }
 
-    private fun activateMode() {
-        link = null
-        wiredLink = null
-        state = TerminalState()
-        renderState()
-        if (!configurationError) connection.start(options)
-    }
-
     private fun openMonitor(source: MonitorSource = selectedSource) {
         selectedSource = source
         showPage(monitorPage)
@@ -271,14 +276,14 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (link == LinkStatus.SAMPLE || link == LinkStatus.WIRED_CONNECTED) {
             state = state.copy(monitor = MonitorStatus.DISCOVERING)
-            connection.openMonitor(source)
+            connection?.openMonitor(source)
         }
         renderState()
     }
 
     private fun showPage(page: View) {
         if (monitorPage.visibility == View.VISIBLE && page !== monitorPage) {
-            connection.closeMonitor()
+            connection?.closeMonitor()
             preview.setImageDrawable(null)
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -288,42 +293,27 @@ class MainActivity : Activity() {
         updateBackNavigation()
     }
 
-    private fun renderCall(status: CallStatus, token: Int = displayedCallToken) {
-        val previous = callStatus
-        displayedCallToken = token
+    private fun renderCall(status: CallStatus, key: CallKey? = displayedCallKey) {
+        displayedCallKey = key
         callStatus = status
+        if ((status == CallStatus.RINGING || status == CallStatus.ANSWERED) && !callPage.isShown) {
+            callReturnPage = when {
+                monitorPage.isShown -> monitorSources
+                settingsPage.isShown -> settingsPage
+                monitorSources.isShown -> monitorSources
+                else -> dashboard
+            }
+            callSettingsDraft = connectionSettings.saveDialogState()
+            connectionSettings.dismissDialog()
+            callPreview.setImageDrawable(null)
+            showPage(callPage)
+        }
         when (status) {
-            CallStatus.RINGING -> {
-                ringtone?.stop(); ringtone = null
-                callAudio.stop()
-                if (!callPage.isShown) {
-                    callReturnPage = when {
-                        monitorPage.isShown -> monitorSources
-                        settingsPage.isShown -> settingsPage
-                        monitorSources.isShown -> monitorSources
-                        else -> dashboard
-                    }
-                    callSettingsDraft = connectionSettings.saveDialogState()
-                    connectionSettings.dismissDialog()
-                    callPreview.setImageDrawable(null)
-                    showPage(callPage)
-                }
-                findViewById<View>(R.id.unlock_call).apply { isActivated = false; isEnabled = true }
+            CallStatus.RINGING, CallStatus.ANSWERED -> {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 volumeControlStream = AudioManager.STREAM_VOICE_CALL
-                if (getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_NORMAL) {
-                    ringtone = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-                    ringtone?.play()
-                }
-            }
-            CallStatus.ANSWERED -> if (previous != status) {
-                ringtone?.stop(); ringtone = null
-                callAudio.start(options.wired && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    connection.sendCallAudio(it, token)
-                }
             }
             else -> {
-                ringtone?.stop(); ringtone = null; callAudio.stop()
                 callPreview.setImageDrawable(null)
                 volumeControlStream = AudioManager.STREAM_MUSIC
                 if (callPage.isShown) {
@@ -334,6 +324,13 @@ class MainActivity : Activity() {
                 callSettingsDraft = null
             }
         }
+        callPage.removeCallbacks(updateUnlock)
+        val remaining = intercom.unlockReadyAtMs - android.os.SystemClock.elapsedRealtime()
+        findViewById<View>(R.id.unlock_call).apply {
+            isActivated = intercom.unlockPending
+            isEnabled = intercom.inCall && !intercom.unlockPending && remaining <= 0
+        }
+        if (remaining > 0) callPage.postDelayed(updateUnlock, remaining)
         findViewById<Button>(R.id.call_action).apply {
             val answered = status == CallStatus.ANSWERED
             setText(if (answered) R.string.hang_up_call else R.string.answer_call)
@@ -346,17 +343,23 @@ class MainActivity : Activity() {
             isEnabled = answered || (status == CallStatus.RINGING && microphoneRequestCall == null)
         }
         val label = getString(if (status == CallStatus.ANSWERED) R.string.call_answered else R.string.call_ringing)
-        findViewById<TextView>(R.id.call_state).text = if (options.wired) label else getString(R.string.call_sample, label)
+        val audioIssue = when {
+            intercom.playback == AudioHealth.UNAVAILABLE -> getString(R.string.call_audio_unavailable)
+            status == CallStatus.ANSWERED && options.wired && intercom.microphone == AudioHealth.UNAVAILABLE -> getString(R.string.call_microphone_denied)
+            else -> intercom.issue
+        }
+        val title = if (options.wired) label else getString(R.string.call_sample, label)
+        findViewById<TextView>(R.id.call_state).text = if (audioIssue == null) title else "$title\n$audioIssue"
     }
 
     @Suppress("DEPRECATION")
     private fun answerCall() {
         if (callStatus != CallStatus.RINGING || microphoneRequestCall != null) return
         if (options.wired && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            microphoneRequestCall = displayedCallToken
+            microphoneRequestCall = displayedCallKey
             findViewById<View>(R.id.call_action).apply { isActivated = true; isEnabled = false }
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 21)
-        } else connection.answerCall(displayedCallToken)
+        } else displayedCallKey?.let { service?.answer(it) }
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -365,8 +368,8 @@ class MainActivity : Activity() {
         if (requestCode != 21) return
         val requestedCall = microphoneRequestCall
         microphoneRequestCall = null
-        if (requestedCall != null && requestedCall == connection.callToken && requestedCall == displayedCallToken && callStatus == CallStatus.RINGING) {
-            connection.answerCall(requestedCall)
+        if (requestedCall != null && requestedCall == connection?.currentState?.callKey && requestedCall == displayedCallKey && callStatus == CallStatus.RINGING) {
+            service?.answer(requestedCall)
             if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
                 Toast.makeText(this, R.string.call_microphone_denied, Toast.LENGTH_LONG).show()
             }
@@ -378,7 +381,9 @@ class MainActivity : Activity() {
     }
 
     private fun renderState() {
-        val status = when (link) {
+        val status = if (intercom.configurationLoaded && !intercom.enabled) {
+            if (intercom.issue != null) R.string.settings_read_failed else R.string.reception_stopped
+        } else when (link) {
             LinkStatus.SAMPLE -> R.string.sample_mode
             LinkStatus.SAMPLE_MISSING -> R.string.no_offline_samples
             LinkStatus.WIRED_CONNECTED -> R.string.wired_connected
@@ -403,7 +408,7 @@ class MainActivity : Activity() {
         setNetworkStatus(sourcesState, status, statusColor)
         setNetworkStatus(monitorState, status, statusColor)
         connectionSettings.renderConnection(status, statusColor, wiredLink, link == LinkStatus.WIRED_ERROR)
-        val ready = link == LinkStatus.SAMPLE || link == LinkStatus.SAMPLE_MISSING || link == LinkStatus.WIRED_CONNECTED
+        val ready = intercom.canMonitor
         sourceTiles.forEach { (source, tile) ->
             val configured = !options.wired || options.hasMonitorIds(source)
             tile.isEnabled = ready && configured
@@ -415,7 +420,7 @@ class MainActivity : Activity() {
         preview.contentDescription = getString(R.string.monitor_preview_description, getString(selectedSource.label))
         val waiting = state.elevator == ElevatorStatus.DISCOVERING || state.elevator == ElevatorStatus.WAITING
         elevatorTile.isActivated = waiting
-        elevatorTile.isEnabled = ready && !waiting
+        elevatorTile.isEnabled = intercom.canCallElevator && !waiting
         elevatorState.setText(when (state.elevator) {
             ElevatorStatus.IDLE -> R.string.call_home_floor
             ElevatorStatus.DISCOVERING, ElevatorStatus.WAITING -> R.string.waiting_for_reply
@@ -487,14 +492,14 @@ class MainActivity : Activity() {
     }
 
     private fun saveOptions(updated: ConnectionOptions, onSaved: (Boolean) -> Unit) {
-        val recovering = configurationError
-        connection.updateOptions(updated, options) { saved ->
+        val owner = connection
+        if (owner == null) { onSaved(false); return }
+        owner.updateOptions(updated, options) { saved ->
             if (isDestroyed) return@updateOptions
             if (saved) {
-                configurationError = false
                 options = updated
                 connectionSettings.renderOptions(updated)
-                if (recovering) activateMode()
+                IntercomService.ensureStarted(this)
             } else Toast.makeText(this, R.string.settings_save_failed, Toast.LENGTH_LONG).show()
             onSaved(saved)
         }

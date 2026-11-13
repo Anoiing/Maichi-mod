@@ -38,6 +38,7 @@ internal class IncomingCallSession<Frame : Any>(
     private var lastActivity = 0L
     private var periodic: Cancellation? = null
     private var timeout: Cancellation? = null
+    private var ringLimit: Cancellation? = null
     private var unlockHangUp: Cancellation? = null
     private var closed = false
     private var requireLookup = false
@@ -67,6 +68,9 @@ internal class IncomingCallSession<Frame : Any>(
                         setStatus(CallStatus.RINGING)
                         lastActivity = scheduler.nowMs
                         armTimeout(8_000)
+                        ringLimit = scheduler.schedule(60_000) {
+                            if (status == CallStatus.RINGING) end(CallStatus.TIMED_OUT, true)
+                        }
                         keepAlive()
                     }
                     lastActivity = scheduler.nowMs
@@ -92,7 +96,10 @@ internal class IncomingCallSession<Frame : Any>(
     }
 
     fun answer() {
-        if (!closed && status == CallStatus.RINGING && sendSignal(CallCommand.ANSWER)) setStatus(CallStatus.ANSWERED)
+        if (!closed && status == CallStatus.RINGING && sendSignal(CallCommand.ANSWER)) {
+            ringLimit?.cancel(); ringLimit = null
+            setStatus(CallStatus.ANSWERED)
+        }
     }
 
     fun unlock(autoHangUp: Boolean = false): Boolean {
@@ -147,6 +154,7 @@ internal class IncomingCallSession<Frame : Any>(
         if (target != null) requireLookup = true
         periodic?.cancel(); periodic = null
         timeout?.cancel(); timeout = null
+        ringLimit?.cancel(); ringLimit = null
         unlockHangUp?.cancel(); unlockHangUp = null
         assembler.clear()
         if (target != null || next == CallStatus.DISCONNECTED) setStatus(next)

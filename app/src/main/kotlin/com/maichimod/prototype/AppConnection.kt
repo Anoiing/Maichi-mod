@@ -56,6 +56,12 @@ internal data class IntercomState(
     val call: CallStatus = CallStatus.IDLE,
     val callKey: CallKey? = null,
     val issue: String? = null,
+    val configurationLoaded: Boolean = false,
+    val microphone: AudioHealth = AudioHealth.INACTIVE,
+    val playback: AudioHealth = AudioHealth.INACTIVE,
+    val unlockPending: Boolean = false,
+    val unlockReadyAtMs: Long = 0,
+
 ) {
     val ready: Boolean get() = enabled && (link == LinkStatus.WIRED_CONNECTED || link == LinkStatus.SAMPLE)
     val inCall: Boolean get() = call == CallStatus.RINGING || call == CallStatus.ANSWERED
@@ -67,7 +73,6 @@ internal interface IntercomObserver {
     fun onState(state: IntercomState)
     fun onMonitorFrame(frame: Bitmap) {}
     fun onCallFrame(frame: Bitmap) {}
-    fun onCallAudio(pcm: ByteArray) {}
 }
 
 internal class AppConnection(
@@ -83,14 +88,19 @@ internal class AppConnection(
     private val runId = UUID.randomUUID().toString()
     private val observers = CopyOnWriteArraySet<IntercomObserver>()
     private val closed = AtomicBoolean()
-    @Volatile var currentState = IntercomState()
+    @Volatile var currentState = IntercomState(enabled = false)
         private set
     private var running = false
 
     fun observe(observer: IntercomObserver): Cancellation {
         observers.add(observer)
-        if (Looper.myLooper() == Looper.getMainLooper()) observer.onState(currentState)
-        else main.post { if (observer in observers) observer.onState(currentState) }
+        val initial = {
+            if (observer in observers) {
+                observer.onState(currentState)
+                if (currentState.inCall) lastCallFrame?.let(observer::onCallFrame)
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) initial() else main.post(initial)
         return Cancellation { observers.remove(observer) }
     }
 
@@ -98,14 +108,45 @@ internal class AppConnection(
         currentState = updated
         observers.forEach { if (it in observers) it.onState(updated) }
     }
+    fun reportIssue(message: String) { main.post { if (!closed.get()) updateState(currentState.copy(issue = message)) } }
     private fun onLink(status: LinkStatus, link: WiredLink?) =
-        updateState(currentState.copy(options = activeOptions, enabled = true, link = status, ethernet = link))
+        updateState(currentState.copy(options = activeOptions, enabled = true, configurationLoaded = true, link = status, ethernet = link))
     private fun onState(state: TerminalState) = updateState(currentState.copy(terminal = state))
-    private fun onCall(status: CallStatus, token: Int) =
-        updateState(currentState.copy(call = status, callKey = CallKey(runId, token)))
-    private fun onFrame(frame: Bitmap) { observers.forEach { it.onMonitorFrame(frame) } }
-    private fun onCallFrame(frame: Bitmap) { observers.forEach { it.onCallFrame(frame) } }
-    private fun onCallAudio(pcm: ByteArray) { observers.forEach { it.onCallAudio(pcm) } }
+    private fun onCall(status: CallStatus, token: Int) {
+        val key = CallKey(runId, token)
+        val changed = currentState.call != status || currentState.callKey != key
+        val newCall = status == CallStatus.RINGING && currentState.callKey != key
+        val active = status == CallStatus.RINGING || status == CallStatus.ANSWERED
+        if (!active || newCall) lastCallFrame = null
+        updateState(currentState.copy(call = status, callKey = key,
+            microphone = if (changed) AudioHealth.INACTIVE else currentState.microphone,
+            playback = if (changed) AudioHealth.INACTIVE else currentState.playback,
+            unlockPending = if (active && !newCall) currentState.unlockPending else false,
+            unlockReadyAtMs = if (newCall) 0 else currentState.unlockReadyAtMs,
+            issue = if (status == CallStatus.RINGING || (changed && status == CallStatus.ANSWERED)) null else currentState.issue))
+        if (changed) when (status) {
+            CallStatus.RINGING -> audio.startRinging()
+            CallStatus.ANSWERED -> audio.start(activeOptions.wired && captureForCall == key) { sendCallAudio(it, key) }
+            else -> audio.stop()
+        }
+    }
+    private fun onFrame(frame: Bitmap) { observers.forEach { if (it in observers) it.onMonitorFrame(frame) } }
+    private var lastCallFrame: Bitmap? = null
+    private fun onCallFrame(frame: Bitmap) {
+        lastCallFrame = frame
+        observers.forEach { if (it in observers) it.onCallFrame(frame) }
+    }
+    private val audio = CallAudio(app) { direction, health ->
+        if (currentState.inCall) updateState(when (direction) {
+            AudioDirection.CAPTURE -> currentState.copy(microphone = health)
+            AudioDirection.PLAYBACK -> currentState.copy(playback = health)
+            AudioDirection.RINGTONE -> currentState.copy(issue = when {
+                health == AudioHealth.UNAVAILABLE -> app.getString(R.string.ringtone_unavailable)
+                currentState.issue == app.getString(R.string.ringtone_unavailable) -> null
+                else -> currentState.issue
+            })
+        })
+    }
 
     private val thread = HandlerThread("Maichi-session").apply { start() }
     private val worker = Handler(thread.looper)
@@ -114,7 +155,16 @@ internal class AppConnection(
     private val socketGeneration = AtomicInteger()
     private val monitorGeneration = AtomicInteger()
     private val callGeneration = AtomicInteger()
-    val callToken: Int get() = callGeneration.get()
+    @Volatile private var captureForCall: CallKey? = null
+    private val unlockInFlight = AtomicBoolean()
+    private var lastUnlockAt: Long? = null
+    private data class PendingCallFrame(val token: Int, val socket: Int, val call: Int, val bitmap: Bitmap)
+    private val pendingCallFrame = AtomicReference<PendingCallFrame?>()
+    private val renderCallFrame = Runnable {
+        pendingCallFrame.getAndSet(null)?.let { frame ->
+            if (isCurrent(frame.token, frame.socket) && frame.call == callGeneration.get() && currentState.inCall) onCallFrame(frame.bitmap)
+        }
+    }
     private val pendingFrame = AtomicReference<PendingFrame?>()
     private val render = Runnable {
         pendingFrame.getAndSet(null)?.let { (token, socketToken, monitorToken, bitmap) ->
@@ -122,7 +172,7 @@ internal class AppConnection(
         }
     }
     private val scheduler = object : SessionScheduler {
-        override val nowMs: Long get() = SystemClock.uptimeMillis()
+        override val nowMs: Long get() = SystemClock.elapsedRealtime()
 
         override fun schedule(delayMs: Long, action: () -> Unit): Cancellation {
             val callback = Runnable(action)
@@ -144,9 +194,52 @@ internal class AppConnection(
     fun start(options: ConnectionOptions) {
         worker.post {
             if (closed.get()) return@post
-            if (running && activeOptions == options) return@post
-            restart(options)
+            applyOptions(options)
         }
+    }
+
+    private fun applyOptions(options: ConnectionOptions) {
+        if (running && !options.requiresReconnect(activeOptions)) {
+            activeOptions = options
+            val token = generation.get(); val socket = socketGeneration.get()
+            publish(token, socket) { updateState(currentState.copy(options = options, configurationLoaded = true)) }
+        } else restart(options)
+    }
+
+    fun restore() {
+        worker.post { if (!closed.get()) restoreSavedOptions() }
+    }
+
+    private fun restoreSavedOptions() {
+        try {
+            val options = settings.load()
+            if (settings.isReceptionEnabled()) applyOptions(options)
+            else {
+                val token = generation.incrementAndGet()
+                release(); running = false; activeOptions = options
+                main.post { if (token == generation.get()) {
+                    audio.stop(); lastCallFrame = null
+                    updateState(IntercomState(options = options, enabled = false, configurationLoaded = true))
+                } }
+            }
+        } catch (_: IllegalStateException) {
+            val token = generation.incrementAndGet()
+            release(); running = false
+            main.post { if (token == generation.get()) {
+                audio.stop(); lastCallFrame = null
+                updateState(IntercomState(enabled = false, configurationLoaded = true,
+                    issue = app.getString(R.string.settings_read_failed)))
+            } }
+        }
+    }
+
+    fun setReceptionEnabled(enabled: Boolean, onSaved: (Boolean) -> Unit) {
+        val queued = worker.post {
+            val saved = synchronized(closed) { !closed.get() && settings.setReceptionEnabled(enabled) }
+            if (saved) restoreSavedOptions()
+            main.post { onSaved(saved) }
+        }
+        if (!queued) main.post { onSaved(false) }
     }
 
     fun retry() {
@@ -214,28 +307,76 @@ internal class AppConnection(
     }
     fun callElevator() = withSession { callElevator() }
 
-    fun answerCall(callToken: Int) = withCall(callToken) { answer() }
-    fun hangUpCall(callToken: Int) {
-        if (!callGeneration.compareAndSet(callToken, callToken + 1)) return
-        withCall(callToken + 1) { hangUp() }
+    fun answerCall(key: CallKey, capture: Boolean = false) = withCall(key) {
+        if (status != CallStatus.RINGING) return@withCall
+        captureForCall = if (capture) key else null
+        answer()
     }
-    fun unlockCall(callToken: Int, autoHangUp: Boolean, onSent: (Boolean) -> Unit) = withCall(callToken) {
-        val sent = unlock(autoHangUp)
-        val token = generation.get(); val socketToken = socketGeneration.get()
-        publish(token, socketToken) { if (callToken == callGeneration.get()) onSent(sent) }
+    fun hangUpCall(key: CallKey) = withCall(key) { hangUp() }
+
+    fun unlockCall(key: CallKey, autoHangUp: Boolean, onResult: (UnlockResult) -> Unit) {
+        val requestedAt = SystemClock.elapsedRealtime()
+        if (closed.get() || !isCurrentCall(key) || !unlockInFlight.compareAndSet(false, true)) {
+            main.post { onResult(UnlockResult.REJECTED) }
+            return
+        }
+        main.post { if (currentState.callKey == key && currentState.inCall) updateState(currentState.copy(unlockPending = true)) }
+        val waiting = Runnable {
+            if (currentState.callKey == key && currentState.unlockPending) updateState(currentState.copy(issue = app.getString(R.string.unlock_waiting)))
+        }
+        main.postDelayed(waiting, 1000)
+        val token = generation.get(); val socket = socketGeneration.get()
+        val queued = worker.post {
+            val now = SystemClock.elapsedRealtime()
+            val result = if (!isCurrent(token, socket) || !isCurrentCall(key) || closed.get() ||
+                calls?.status !in listOf(CallStatus.RINGING, CallStatus.ANSWERED) || now - requestedAt >= 1000 ||
+                lastUnlockAt?.let { now - it < 1500 } == true) {
+                UnlockResult.REJECTED
+            } else {
+                lastUnlockAt = now
+                if (calls?.unlock(autoHangUp) == true) UnlockResult.SENT else UnlockResult.UNCONFIRMED
+            }
+            val readyAt = (lastUnlockAt ?: 0) + 1500
+            main.post {
+                main.removeCallbacks(waiting)
+                unlockInFlight.set(false)
+                if (result == UnlockResult.UNCONFIRMED && currentState.callKey == key) onCall(CallStatus.DISCONNECTED, key.sequence)
+                if (currentState.callKey == key) updateState(currentState.copy(unlockPending = false,
+                    unlockReadyAtMs = readyAt,
+                    issue = when {
+                        result == UnlockResult.UNCONFIRMED -> app.getString(R.string.unlock_unconfirmed)
+                        currentState.issue == app.getString(R.string.unlock_waiting) -> null
+                        else -> currentState.issue
+                    }))
+                onResult(result)
+            }
+        }
+        if (!queued) {
+            unlockInFlight.set(false)
+            main.removeCallbacks(waiting)
+            main.post {
+                if (currentState.callKey == key) updateState(currentState.copy(unlockPending = false))
+                onResult(UnlockResult.REJECTED)
+            }
+        }
     }
-    fun sendCallAudio(pcm: ByteArray, callToken: Int) = withCall(callToken) { sendAudio(pcm) }
+    fun sendCallAudio(pcm: ByteArray, key: CallKey) = withCall(key) { sendAudio(pcm) }
+
     fun simulateIncoming() { worker.post { replayTransport?.simulateIncoming() } }
 
-    private fun withCall(callToken: Int = callGeneration.get(), action: IncomingCallSession<Bitmap>.() -> Unit) {
-        val token = generation.get(); val socketToken = socketGeneration.get()
+    private fun isCurrentCall(key: CallKey): Boolean = key.runId == runId && key.sequence == callGeneration.get()
+
+    private fun withCall(key: CallKey, action: IncomingCallSession<Bitmap>.() -> Unit) {
+        val token = generation.get(); val socket = socketGeneration.get()
         worker.post {
-            if (isCurrent(token, socketToken) && callToken == callGeneration.get()) calls?.action()
+            if (!closed.get() && isCurrent(token, socket) && isCurrentCall(key) &&
+                calls?.status in listOf(CallStatus.RINGING, CallStatus.ANSWERED)) calls?.action()
         }
     }
 
     fun stop() {
-        generation.incrementAndGet()
+        val token = generation.incrementAndGet()
+        main.post { if (token == generation.get()) audio.stop() }
         monitorGeneration.incrementAndGet()
         pendingFrame.set(null)
         main.removeCallbacks(render)
@@ -251,6 +392,7 @@ internal class AppConnection(
         if (!synchronized(closed) { closed.compareAndSet(false, true) }) return
         stop()
         observers.clear()
+        main.post { audio.stop(); lastCallFrame = null }
         thread.quitSafely()
     }
 
@@ -425,21 +567,25 @@ internal class AppConnection(
         session = TerminalSession(profile, logged, sessionScheduler, observer)
         calls = IncomingCallSession(profile, logged, sessionScheduler, object : CallObserver<Bitmap> {
             override fun onStateChanged(status: CallStatus) {
-                if (status == CallStatus.RINGING || status == CallStatus.ENDED ||
-                    status == CallStatus.DISCONNECTED || status == CallStatus.TIMED_OUT
-                ) callGeneration.incrementAndGet()
-                if (status == CallStatus.RINGING) session?.closeMonitor()
+                if (status == CallStatus.RINGING) {
+                    callGeneration.incrementAndGet()
+                    lastUnlockAt = null
+                    captureForCall = null
+                    session?.closeMonitor()
+                }
                 val callToken = callGeneration.get()
                 publish(token, socketToken) { if (callToken == callGeneration.get()) onCall(status, callToken) }
             }
             override fun decodeJpeg(jpeg: ByteArray): Bitmap? = observer.decodeJpeg(jpeg)
             override fun onFrame(frame: Bitmap) {
                 val callToken = callGeneration.get()
-                publish(token, socketToken) { if (callToken == callGeneration.get()) onCallFrame(frame) }
+                pendingCallFrame.set(PendingCallFrame(token, socketToken, callToken, frame))
+                main.removeCallbacks(renderCallFrame)
+                main.post(renderCallFrame)
             }
             override fun onAudio(pcm: ByteArray) {
                 val callToken = callGeneration.get()
-                publish(token, socketToken) { if (callToken == callGeneration.get()) onCallAudio(pcm) }
+                publish(token, socketToken) { if (callToken == callGeneration.get()) audio.enqueue(pcm) }
             }
             override fun onTransportFailure(failure: Exception) = handleTransportFailure(failure)
         })
@@ -461,7 +607,8 @@ internal class AppConnection(
     private fun publishWiredStatus(token: Int, socketToken: Int, status: LinkStatus, link: WiredLink?) {
         publish(token, socketToken) {
             onState(TerminalState())
-            onCall(CallStatus.IDLE, callGeneration.get())
+            if (currentState.inCall) onCall(CallStatus.DISCONNECTED, currentState.callKey?.sequence ?: callGeneration.get())
+            else if (currentState.call == CallStatus.IDLE) onCall(CallStatus.IDLE, callGeneration.get())
             onLink(status, link)
         }
     }
@@ -481,7 +628,10 @@ internal class AppConnection(
         wiredRetry?.cancel()
         wiredRetry = null
         pendingFrame.set(null)
+        pendingCallFrame.set(null)
         main.removeCallbacks(render)
+        main.removeCallbacks(renderCallFrame)
+        captureForCall = null
         if (closeMonitor) calls?.close() else calls?.disconnect()
         calls = null
         if (closeMonitor) session?.close() else session?.disconnect()

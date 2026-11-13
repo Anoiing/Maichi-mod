@@ -8,9 +8,9 @@
 
 **Tech Stack:** 原生 Kotlin、Android View/XML、JDK 17、minSdk 26、compileSdk/targetSdk 36、现有 JUnit 4.13.2；AndroidX Test 只用于设备测试，人脸阶段才引入 CameraX/本地 ML Kit。
 
-**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。状态：开发中；各阶段的本地验证、模拟器验证与现场验收分别记录。
+**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。状态：第一期本地开发、隔离验证和多轮全量审查完成；现场验收待执行，感知阶段尚未进入。
 
-**Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。当前仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，也尚无 androidTest 目录。本轮以 JDK 17 离线强制重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；没有在本轮安装或进行真实门机操作。
+**Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。该基线仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，当时尚无 androidTest 目录。基线核查以 JDK 17 离线重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；当时未安装现场平板或进行真实门机操作。
 
 ## Global Constraints
 
@@ -158,11 +158,13 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** Consumes 前五任务可安装构建；Produces 第一阶段交付证据和结构复核。不是新一轮架构扩展。
 
-- [ ] **Step 1: 完整回归。** 运行 `./gradlew -PmaichiFixtureDir=.maichi-fixtures :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest` 和 `python3 -B -m unittest discover -s tools -p 'test_*.py'`；在隔离模拟器运行全部设备测试。样本缺失、跳过、模拟通过和真实通过分别记录。
-- [ ] **Step 2: 复核整体结构。** 检查连接、状态、声音和来电页是否各有唯一所有者；原位置逻辑是否真正删除；是否残留双写、转发层、双状态机、临时兼容入口或只为假设未来而增加的接口。控制器中如果出现真实独立且难以理解的职责，再针对该部分拆分；不能以控制器一个文件为目标塞入所有系统细节。
+- [x] **Step 1: 完整回归。** 运行 `./gradlew -PmaichiFixtureDir=.maichi-fixtures :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest` 和 `python3 -B -m unittest discover -s tools -p 'test_*.py'`；在隔离模拟器运行全部设备测试。样本缺失、跳过、模拟通过和真实通过分别记录。
+- [x] **Step 2: 复核整体结构。** 检查连接、状态、声音和来电页是否各有唯一所有者；原位置逻辑是否真正删除；是否残留双写、转发层、双状态机、临时兼容入口或只为假设未来而增加的接口。控制器中如果出现真实独立且难以理解的职责，再针对该部分拆分；不能以控制器一个文件为目标塞入所有系统细节。
 - [ ] **Step 3: 现场核心验收。** MatePad 核对持久地址/同时供电；逐项在首页、监控选择/三路播放、四个设置分组/弹窗、主题重建、米家/系统设置前台、后台、暗屏和锁屏发起真实来电，确认持续监听。检验通话后回原应用、单向/双向声音、开锁、旧通知、拔插网线/网卡、IP/权限变化与重启首次解锁前后；首次解锁前默认主题可用。另验 R01～R10，可配置闲置返回关闭时仍可后台接待。物理结果由现场确认，系统设置变更由用户参与。
-- [ ] **Step 4: 按实测处理性能。** 网络地址就绪后恢复目标 5 秒，完整合法来电收到后铃声/展示目标 2 秒。先记录控制队列与 JPEG 解码耗时；只有实测控制响应不满足目标，才把现有解码移到一个有界工作队列，并直接更新现有 JpegAssembler/会话观察接口和测试，成功解码才刷新健康时间，不长期保留两套路径。当前监控“仅交付最新帧”做法复用于来电。
+- [x] **Step 4: 按实测处理性能。** 网络地址就绪后恢复目标 5 秒，完整合法来电收到后铃声/展示目标 2 秒。先记录控制队列与 JPEG 解码耗时；只有实测控制响应不满足目标，才把现有解码移到一个有界工作队列，并直接更新现有 JpegAssembler/会话观察接口和测试，成功解码才刷新健康时间，不长期保留两套路径。当前监控“仅交付最新帧”做法复用于来电。
 - [ ] **Step 5: 稳定性与交付。** 先完成 24 小时，再完成 72 小时观察，包含可追溯测试来电、息屏、米家长时间前台、用户持续操作不被抢占、闲置返回、网络/电源变化。未通过的真实接待、地址恢复、声音、门锁或自动返回先修复，不能以回放替代，也不能进入人脸阶段。保持历史界面记录时间边界，更新实际能力说明，建议 `docs: record dedicated intercom acceptance and operation`。
+
+**本地结论：** 代码与构建检查已完成；第 3、5 步按用户暂不安装的要求保留待执行，不能据此勾选现场/长期验收或启动任务 7。实测和多轮审查见验收记录。
 
 ## Task 7: P6 在稳定接待上加入感知与低亮待机
 

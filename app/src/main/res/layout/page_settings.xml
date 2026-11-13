@@ -61,6 +61,17 @@
                     android:text="@string/check_background_settings" />
                 <com.maichimod.prototype.MedioraButton android:id="@+id/reset_configuration" style="@style/Widget.Maichi.SettingsAction"
                     android:text="@string/reset_configuration" android:visibility="gone" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <com.maichimod.prototype.MedioraSwitch android:id="@+id/idle_return_enabled"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:paddingVertical="8dp" android:text="@string/idle_return_enabled"
+                    android:textColor="@color/text" android:textSize="@dimen/label_size" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_return_minutes" style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/idle_waiting_time" />
+                <TextView android:id="@+id/idle_return_hint" style="@style/Widget.Maichi.SettingsDescription"
+                    android:accessibilityLiveRegion="polite" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_detection_settings" style="@style/Widget.Maichi.SettingsAction"
+                    android:text="@string/idle_detection_settings" />
             </LinearLayout>
             <LinearLayout android:id="@+id/peer_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
                 <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/door_device_settings" />

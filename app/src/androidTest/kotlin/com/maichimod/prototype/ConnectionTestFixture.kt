@@ -63,10 +63,11 @@ internal class RunningIntercom : java.io.Closeable {
         check(bound && binding.connected.await(5, java.util.concurrent.TimeUnit.SECONDS))
         val ready = java.util.concurrent.CountDownLatch(1)
         val sub = owner.observe(object : IntercomObserver {
-            override fun onState(state: IntercomState) { if (state.link == LinkStatus.SAMPLE) ready.countDown() }
+            override fun onState(state: IntercomState) { if (state.link == LinkStatus.SAMPLE || state.link == LinkStatus.SAMPLE_MISSING) ready.countDown() }
         })
         try {
-            check(ready.await(20, java.util.concurrent.TimeUnit.SECONDS)) { "Replay not ready: enabled=${owner.currentState.enabled} link=${owner.currentState.link} call=${owner.currentState.call} issue=${owner.currentState.issue}" }
+            // Cold debug captures have measured above 20s under host load; this is not the network recovery deadline.
+            check(ready.await(40, java.util.concurrent.TimeUnit.SECONDS) && owner.currentState.link == LinkStatus.SAMPLE) { "Replay not ready: enabled=${owner.currentState.enabled} link=${owner.currentState.link} call=${owner.currentState.call} issue=${owner.currentState.issue}" }
         } catch (failure: Throwable) {
             close()
             throw failure

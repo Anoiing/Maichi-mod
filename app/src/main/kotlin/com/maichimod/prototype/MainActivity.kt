@@ -75,6 +75,7 @@ class MainActivity : Activity() {
     private lateinit var connectionSettings: ConnectionSettingsView
 
     private var options = ConnectionOptions()
+    private var idleOptions = IdleReturnOptions()
     private var link: LinkStatus? = null
     private var wiredLink: WiredLink? = null
     private var state = TerminalState()
@@ -132,14 +133,24 @@ class MainActivity : Activity() {
         volumeControls = VolumeControls(settingsPage)
         volumeControlStream = AudioManager.STREAM_MUSIC
 
+        idleOptions = AppSettings(this).idleReturnOptions()
         connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, { service?.retryReception() }, onThemeSelected = { theme ->
             Appearance.save(this, theme)
             recreate()
-        }, onWindowFocusGained = ::showCurrentCall) {
+        }, onWindowFocusGained = { showCurrentCall(); refreshIdleSettings() }, currentIdleOptions = { idleOptions },
+            onSaveIdleReturn = { updated, done ->
+                val saved = AppSettings(this).saveIdleReturn(updated.enabled, updated.minutes)
+                if (saved) UserInteractionService.refreshSettings()
+                refreshIdleSettings()
+                done(saved)
+            }) {
             showPage(dashboard)
             connection?.simulateIncoming()
         }
         connectionSettings.renderOptions(options)
+        findViewById<View>(R.id.idle_detection_settings).setOnClickListener {
+            openSystemSettings(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
         connectionSettings.restoreSection(savedInstanceState?.getInt("settings_section") ?: 0)
         findViewById<android.widget.CompoundButton>(R.id.reception_enabled).setOnCheckedChangeListener { _, checked ->
             if (checked != intercom.enabled) {
@@ -185,6 +196,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         started = true
+        UserInteractionService.activityVisible(this, true)
         renderState()
         if (!IntercomService.ensureStarted(this)) Toast.makeText(this, R.string.reception_start_failed, Toast.LENGTH_LONG).show()
         bound = bindService(Intent(this, IntercomService::class.java), binding, Context.BIND_AUTO_CREATE)
@@ -193,6 +205,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        refreshIdleSettings()
         service?.refreshAvailability()
         showCurrentCall()
     }
@@ -206,6 +219,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         if (monitorPage.isShown) showPage(monitorSources)
         started = false
+        UserInteractionService.activityVisible(this, false)
         subscription?.cancel(); subscription = null
         if (bound) unbindService(binding)
         bound = false
@@ -262,6 +276,7 @@ class MainActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && ::volumeControls.isInitialized) {
+            refreshIdleSettings()
             if (settingsPage.isShown) volumeControls.refresh()
             service?.refreshAvailability()
             showCurrentCall()
@@ -475,6 +490,12 @@ class MainActivity : Activity() {
             } else Toast.makeText(this, R.string.settings_save_failed, Toast.LENGTH_LONG).show()
             onSaved(saved)
         }
+    }
+
+    internal fun refreshIdleSettings() {
+        if (!::connectionSettings.isInitialized) return
+        idleOptions = AppSettings(this).idleReturnOptions()
+        connectionSettings.renderIdleReturn(idleOptions, UserInteractionService.isAvailable(), UserInteractionService.returnFailed())
     }
 
 }

@@ -8,6 +8,8 @@ import java.io.File
 import java.io.FileNotFoundException
 import org.json.JSONObject
 
+internal data class IdleReturnOptions(val enabled: Boolean = true, val minutes: Int = 3, val valid: Boolean = true)
+
 /** Runtime identity has one device-protected record. Appearance remains in its own preferences. */
 internal class AppSettings(
     private val context: Context,
@@ -15,6 +17,30 @@ internal class AppSettings(
 ) {
     private val runtime = AtomicFile(File(context.createDeviceProtectedStorageContext().filesDir, "intercom.json"))
     private fun notes() = AtomicFile(File(context.filesDir, "intercom-notes.json"))
+    private fun idleFile() = AtomicFile(File(context.filesDir, "idle-return.json"))
+
+    fun idleReturnOptions(): IdleReturnOptions = synchronized(lock) {
+        if (!userUnlocked()) return@synchronized IdleReturnOptions(false, valid = false)
+        try {
+            val record = read(idleFile()) ?: return@synchronized IdleReturnOptions()
+            check(record.get("version") == 1)
+            val minutes = record.get("minutes") as? Int ?: error("Invalid idle duration")
+            check(minutes in 1..30)
+            val enabled = record.get("enabled") as? Boolean ?: error("Invalid idle setting")
+            IdleReturnOptions(enabled, minutes)
+        } catch (failure: Exception) {
+            Log.w(TAG, "Unable to read idle return settings", failure)
+            IdleReturnOptions(false, valid = false)
+        }
+    }
+
+    fun isIdleReturnEnabled(): Boolean = idleReturnOptions().enabled
+    fun idleReturnMinutes(): Int = idleReturnOptions().minutes
+
+    fun saveIdleReturn(enabled: Boolean, minutes: Int): Boolean = synchronized(lock) {
+        if (!userUnlocked() || minutes !in 1..30) return@synchronized false
+        write(idleFile(), JSONObject().put("version", 1).put("enabled", enabled).put("minutes", minutes))
+    }
 
     fun load(): ConnectionOptions = synchronized(lock) {
         val record = read(runtime)

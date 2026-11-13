@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="idle_accessibility_label">门禁闲置返回</string>
+    <string name="idle_accessibility_help">接收操作事件以判断离开门禁后的闲置时间，不读取页面内容或输入的文字，不改变常规触摸方式。门禁来电接待独立运行。</string>
+    <string name="idle_detection_settings">设置系统操作检测</string>
+    <string name="idle_return_enabled">闲置后返回门禁</string>
+    <string name="idle_waiting_time">等待时长</string>
+    <string name="idle_waiting_minutes">等待时长：%1$d 分钟</string>
+    <string name="idle_minutes_help">离开门禁后，按系统上报的最近一次操作计时。请输入 1～30 的整数分钟，默认 3 分钟。</string>
+    <string name="idle_minutes_invalid">请输入 1～30 的整数分钟</string>
+    <string name="idle_authorization_required">系统操作检测未运行，需在系统设置开启后生效；门禁接待不受影响。</string>
+    <string name="idle_return_disabled">已关闭自动返回，门禁接待继续运行。</string>
+    <string name="idle_return_limited">已开启操作检测。部分应用、自绘区域或空白处操作可能不上报，实际覆盖范围需在平板验证。锁屏不主动唤醒，通话优先。</string>
+    <string name="idle_return_failed">自动返回未完成，请手动打开门禁。不会连续重试，接待仍保持运行。</string>
+    <string name="idle_settings_corrupt">自动返回设置读取失败，暂不生效；请重新保存开关或时长。</string>
     <string name="wired_address_pending">网口已连接，正在等待 IPv4 地址</string>
     <string name="wired_address_delayed">网口已连接但尚未取得有效地址，请检查平板有线网络的地址设置</string>
     <string name="wired_retry_after">连接暂时中断，将在约 %1$d 秒后重试</string>

@@ -47,7 +47,7 @@ class IncomingCallActivity : Activity() {
     private var queuedAudioAction: Pair<CallKey, Boolean>? = null
     private var settingsAction: Pair<CallKey, Boolean>? = null
     private var answerWhenReady = false
-    private var deferredIntent: Intent? = null
+    private val deferredIntents = linkedMapOf<CallKey, Intent>()
     private var openedAt = 0L
     private lateinit var preview: ImageView
     private val tick = Runnable { render() }
@@ -80,6 +80,11 @@ class IncomingCallActivity : Activity() {
         super.onCreate(savedInstanceState)
         key = readKey(intent)
         if (key == null) { finishAndRemoveTask(); return }
+        validatedKey = key?.takeIf { it.runId == savedInstanceState?.getString("validatedRun") &&
+            it.sequence == savedInstanceState.getInt("validatedSequence", -1) }
+        @Suppress("DEPRECATION")
+        val pending = savedInstanceState?.getParcelableArrayList<Intent>("pending_call_intents")
+        pending?.forEach(::deferPresentation)
         answerWhenReady = intent.getBooleanExtra(ANSWER, false)
         microphoneAsked = savedInstanceState?.getBoolean("microphoneAsked") ?: false
         permissionCode = savedInstanceState?.getInt("permissionCode", 1000) ?: 1000
@@ -122,6 +127,7 @@ class IncomingCallActivity : Activity() {
         super.onStart()
         if (key == null) return
         started = true
+        UserInteractionService.activityVisible(this, true)
         openedAt = SystemClock.elapsedRealtime()
         IntercomService.ensureStarted(this)
         bound = bindService(Intent(this, IntercomService::class.java), binding, Context.BIND_AUTO_CREATE)
@@ -141,6 +147,7 @@ class IncomingCallActivity : Activity() {
     override fun onPause() { resumed = false; super.onPause() }
     override fun onStop() {
         started = false
+        UserInteractionService.activityVisible(this, false)
         queuedAudioAction = null
         subscription?.cancel(); subscription = null
         if (bound) unbindService(binding)
@@ -157,25 +164,23 @@ class IncomingCallActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        deferredIntent = intent
+        deferPresentation(intent)
         openedAt = SystemClock.elapsedRealtime()
         allowLockedPresentation(true)
         if (::preview.isInitialized) render()
     }
 
-    private fun acceptIntent(intent: Intent): Boolean {
-        val next = readKey(intent)
-        if (next == null || state.callKey != next) {
-            if (validatedKey == state.callKey && state.inCall) return true
-            finishAndRemoveTask(); return false
-        }
-        setIntent(intent)
-        if (next != key) adopt(next)
-        answerWhenReady = answerWhenReady || intent.getBooleanExtra(ANSWER, false)
-        return true
+    private fun deferPresentation(incoming: Intent) {
+        val requested = readKey(incoming) ?: return
+        val answer = incoming.getBooleanExtra(ANSWER, false) || deferredIntents[requested]?.getBooleanExtra(ANSWER, false) == true
+        deferredIntents[requested] = Intent(incoming).putExtra(ANSWER, answer)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelableArrayList("pending_call_intents", ArrayList(deferredIntents.values))
+        validatedKey?.takeIf { it == key }?.let {
+            outState.putString("validatedRun", it.runId); outState.putInt("validatedSequence", it.sequence)
+        }
         outState.putBoolean("microphoneAsked", microphoneAsked)
         outState.putInt("permissionCode", permissionCode)
         requestKey?.let {
@@ -206,12 +211,17 @@ class IncomingCallActivity : Activity() {
             return
         }
         if (state.callKey == key) validatedKey = key
-        deferredIntent?.let { intent ->
-            deferredIntent = null
-            if (!acceptIntent(intent)) return
+        // Only the checked current key can supply an action. Stale notifications cannot replace it.
+        val pending = deferredIntents[state.callKey]
+        deferredIntents.clear()
+        pending?.let { incoming ->
+            val next = requireNotNull(state.callKey)
+            setIntent(incoming)
+            if (next != key) adopt(next)
+            answerWhenReady = answerWhenReady || incoming.getBooleanExtra(ANSWER, false)
         }
         if (state.callKey != key) {
-            if (validatedKey == key && state.inCall && state.callKey != null) {
+            if (validatedKey == key && state.inCall && state.callKey != null && state.callKey?.runId == key?.runId) {
                 adopt(requireNotNull(state.callKey))
                 setIntent(createIntent(this, requireNotNull(key)))
             } else { finishAndRemoveTask(); return }
@@ -286,14 +296,19 @@ class IncomingCallActivity : Activity() {
     private fun disableActions() {
         findViewById<View>(R.id.call_action).isEnabled = false
         findViewById<View>(R.id.unlock_call).isEnabled = false
+        findViewById<View>(R.id.retry_call_audio).isEnabled = false
     }
 
     private fun finishCall() {
-        key?.let { requested ->
-            val owner = service
-            if (owner != null) {
-                if (state.callKey == requested && state.inCall) owner.connection.hangUpCall(requested)
-            } else if (!IntercomService.requestHangUp(this, requested)) {
+        val owner = service
+        if (owner != null) {
+            key?.takeIf { state.callKey == it && state.inCall }?.let(owner.connection::hangUpCall)
+        } else {
+            // The checked owner accepts only its current key; a pending presentation may be newer than this page.
+            val candidates = (deferredIntents.keys + listOfNotNull(key)).toSet()
+            var submitted = false
+            for (requested in candidates) if (IntercomService.requestHangUp(this, requested)) submitted = true
+            if (candidates.isNotEmpty() && !submitted) {
                 Toast.makeText(this, R.string.hang_up_not_submitted, Toast.LENGTH_LONG).show()
             }
         }
@@ -303,7 +318,7 @@ class IncomingCallActivity : Activity() {
     @Suppress("DEPRECATION")
     private fun requestAudio(retry: Boolean) {
         val requested = key ?: return
-        if (!resumed || state.callKey != requested || !state.inCall || requestKey != null) return
+        if (service == null || !state.configurationLoaded || !resumed || state.callKey != requested || !state.inCall || requestKey != null) return
         if (state.options.wired && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             if (microphoneAsked && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
                 if (retry) openPermissionSettings(requested, true)

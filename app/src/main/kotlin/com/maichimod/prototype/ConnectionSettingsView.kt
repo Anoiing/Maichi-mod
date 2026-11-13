@@ -34,6 +34,8 @@ internal class ConnectionSettingsView(
     onRetry: () -> Unit,
     private val onThemeSelected: (ThemeColor) -> Unit = {},
     private val onWindowFocusGained: () -> Unit = {},
+    private val currentIdleOptions: () -> IdleReturnOptions = { IdleReturnOptions() },
+    private val onSaveIdleReturn: (IdleReturnOptions, (Boolean) -> Unit) -> Unit = { _, done -> done(false) },
     private val onSimulateCall: () -> Unit = {},
 ) {
     private val context = page.context
@@ -50,13 +52,19 @@ internal class ConnectionSettingsView(
     private val tabIds = listOf(R.id.settings_tab_local, R.id.settings_tab_devices, R.id.settings_tab_sound, R.id.settings_tab_appearance)
     private var dialog: AlertDialog? = null
     private var dialogField: ConnectionField? = null
-    private var dialogRestorable = true
+    private enum class DialogType { FIELD, MODE, IDLE, RESET }
+    private var dialogType = DialogType.MODE
     private val reception = page.findViewById<CompoundButton>(R.id.reception_enabled)
     private val receptionHint = page.findViewById<TextView>(R.id.reception_hint)
     private val presentationSettings = page.findViewById<Button>(R.id.presentation_settings)
     private val resetConfiguration = page.findViewById<View>(R.id.reset_configuration)
     private var receptionSaving = false
     private var receptionCanToggle = false
+    private val idleReturn = page.findViewById<CompoundButton>(R.id.idle_return_enabled)
+    private val idleMinutes = page.findViewById<Button>(R.id.idle_return_minutes)
+    private val idleHint = page.findViewById<TextView>(R.id.idle_return_hint)
+    private var idleSaving = false
+    private var renderingIdle = false
     private val values = buildMap {
         val local = page.findViewById<ViewGroup>(R.id.local_parameters)
         val peer = page.findViewById<ViewGroup>(R.id.peer_parameters)
@@ -105,6 +113,16 @@ internal class ConnectionSettingsView(
         selectSection(0)
         page.findViewById<View>(R.id.connection_mode_button).setOnClickListener { editMode() }
         retryEthernet.setOnClickListener { onRetry() }
+        idleMinutes.setOnClickListener { editIdleMinutes() }
+        idleReturn.setOnCheckedChangeListener { _, checked ->
+            if (renderingIdle || idleSaving || checked == currentIdleOptions().enabled) return@setOnCheckedChangeListener
+            idleSaving = true; idleReturn.isEnabled = false; idleMinutes.isEnabled = false
+            onSaveIdleReturn(currentIdleOptions().copy(enabled = checked, valid = true)) { saved ->
+                idleSaving = false; idleReturn.isEnabled = true; idleMinutes.isEnabled = true
+                renderingIdle = true; idleReturn.isChecked = currentIdleOptions().enabled; renderingIdle = false
+                if (!saved) android.widget.Toast.makeText(context, R.string.settings_save_failed, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
         autoHangUp.setOnCheckedChangeListener { _, checked ->
             val options = currentOptions()
             if (checked != options.autoHangUpAfterUnlock) {
@@ -142,6 +160,21 @@ internal class ConnectionSettingsView(
             label.text = value.ifEmpty { context.getString(field.emptyValue) }
             label.setTextColor(context.getColor(if (value.isEmpty()) R.color.muted_text else R.color.text))
         }
+    }
+
+    fun renderIdleReturn(options: IdleReturnOptions, authorized: Boolean, returnFailed: Boolean) {
+        renderingIdle = true
+        if (!idleSaving) idleReturn.isChecked = options.enabled
+        idleReturn.isEnabled = !idleSaving; idleMinutes.isEnabled = !idleSaving
+        idleMinutes.text = context.getString(R.string.idle_waiting_minutes, options.minutes)
+        idleHint.setText(when {
+            !options.valid -> R.string.idle_settings_corrupt
+            !options.enabled -> R.string.idle_return_disabled
+            !authorized -> R.string.idle_authorization_required
+            returnFailed -> R.string.idle_return_failed
+            else -> R.string.idle_return_limited
+        })
+        renderingIdle = false
     }
 
     fun renderConnection(status: Int, color: Int, link: WiredLink?, canRetry: Boolean) {
@@ -206,7 +239,7 @@ internal class ConnectionSettingsView(
                 }
             }
         }
-        showDialog(confirmation, titleResource = R.string.reset_configuration, restorable = false)
+        showDialog(confirmation, titleResource = R.string.reset_configuration, type = DialogType.RESET)
         confirmation.getButton(AlertDialog.BUTTON_POSITIVE).apply {
             MedioraUi.applySurface(this, SurfaceRole.DESTRUCTIVE)
             setTextColor(MedioraUi.buttonText(context, SurfaceRole.DESTRUCTIVE))
@@ -223,17 +256,19 @@ internal class ConnectionSettingsView(
     }
 
     fun saveDialogState(): Bundle? {
-        if (!dialogRestorable) return null
+        if (dialogType == DialogType.RESET) return null
         val current = dialog?.takeIf { it.isShowing } ?: return null
         val field = dialogField
         return Bundle().apply {
             putString("field", field?.name)
-            if (field != null) {
+            putString("type", dialogType.name)
+            if (dialogType == DialogType.FIELD || dialogType == DialogType.IDLE) {
                 val input = current.findViewById<EditText>(R.id.field_input)
                 putString("value", input.text.toString())
                 putInt("selection_start", input.selectionStart)
                 putInt("selection_end", input.selectionEnd)
                 putBoolean("error", current.findViewById<View>(R.id.field_error).visibility == View.VISIBLE)
+                putCharSequence("error_text", current.findViewById<TextView>(R.id.field_error).text)
             } else {
                 putBoolean("wired", current.findViewById<RadioGroup>(R.id.mode_group).checkedRadioButtonId == R.id.option_wired)
                 putBoolean("simulate_timeout", current.findViewById<CheckBox>(R.id.simulate_timeout).isChecked)
@@ -243,6 +278,7 @@ internal class ConnectionSettingsView(
 
     fun restoreDialogState(saved: Bundle?) {
         if (saved == null) return
+        if (saved.getString("type") == DialogType.IDLE.name) { editIdleMinutes(saved); return }
         val fieldName = saved.getString("field")
         if (fieldName != null) {
             val field = ConnectionField.entries.firstOrNull { it.name == fieldName } ?: return
@@ -252,17 +288,20 @@ internal class ConnectionSettingsView(
         }
     }
 
+    private fun editIdleMinutes(saved: Bundle? = null) = editField(null, saved)
+
     @Suppress("DEPRECATION")
-    private fun editField(field: ConnectionField, saved: Bundle? = null) {
+    private fun editField(field: ConnectionField?, saved: Bundle? = null) {
         val content = inflater.inflate(R.layout.dialog_connection_field, null)
-        content.findViewById<TextView>(R.id.field_help).setText(field.help)
+        content.findViewById<TextView>(R.id.field_help).setText(field?.help ?: R.string.idle_minutes_help)
         val input = content.findViewById<EditText>(R.id.field_input)
         MedioraUi.applySurface(input, SurfaceRole.INPUT)
         val error = content.findViewById<TextView>(R.id.field_error)
-        input.setHint(field.label)
-        input.setText(saved?.getString("value") ?: field.display(currentOptions()[field]))
+        input.setHint(field?.label ?: R.string.idle_waiting_time)
+        if (field == null) input.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        input.setText(saved?.getString("value") ?: if (field == null) currentIdleOptions().minutes.toString() else field.display(currentOptions()[field]))
         input.setSelectAllOnFocus(saved == null)
-        error.setText(field.error)
+        error.text = saved?.getCharSequence("error_text") ?: context.getString(field?.error ?: R.string.idle_minutes_invalid)
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -272,7 +311,6 @@ internal class ConnectionSettingsView(
             }
         })
         val editor = AlertDialog.Builder(context)
-            .setTitle(context.getString(R.string.edit_field, context.getString(field.label)))
             .setView(content)
             .setNegativeButton(R.string.cancel_setting, null)
             .setPositiveButton(R.string.save_setting, null)
@@ -280,21 +318,24 @@ internal class ConnectionSettingsView(
         editor.setOnShowListener {
             val save = editor.getButton(AlertDialog.BUTTON_POSITIVE)
             save.setOnClickListener {
-                val updated = currentOptions().withField(field, input.text.toString())
-                if (updated == null) {
-                    error.setText(field.error)
+                val updated = field?.let { currentOptions().withField(it, input.text.toString()) }
+                val minutes = input.text.toString().toIntOrNull()
+                if ((field != null && updated == null) || (field == null && (minutes == null || minutes !in 1..30))) {
+                    error.setText(field?.error ?: R.string.idle_minutes_invalid)
                     error.visibility = View.VISIBLE
                     input.isSelected = true
                     return@setOnClickListener
                 }
                 save.isEnabled = false
-                onSave(updated) { saved ->
+                val complete: (Boolean) -> Unit = { saved ->
                     save.isEnabled = true
                     if (saved) editor.dismiss() else {
                         error.setText(R.string.settings_save_failed)
                         error.visibility = View.VISIBLE
                     }
                 }
+                if (field == null) onSaveIdleReturn(currentIdleOptions().copy(minutes = requireNotNull(minutes), valid = true), complete)
+                else onSave(requireNotNull(updated), complete)
             }
             input.setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_DONE) save.performClick() else false
@@ -313,7 +354,8 @@ internal class ConnectionSettingsView(
         editor.window?.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
         )
-        showDialog(editor, field)
+        showDialog(editor, field, titleResource = if (field == null) R.string.idle_waiting_time else null,
+            type = if (field == null) DialogType.IDLE else DialogType.FIELD)
     }
 
     private fun editMode(saved: Bundle? = null) {
@@ -356,11 +398,12 @@ internal class ConnectionSettingsView(
         showDialog(picker)
     }
 
-    private fun showDialog(next: AlertDialog, field: ConnectionField? = null, titleResource: Int? = null, restorable: Boolean = true) {
+    private fun showDialog(next: AlertDialog, field: ConnectionField? = null, titleResource: Int? = null,
+        type: DialogType = if (field == null) DialogType.MODE else DialogType.FIELD) {
         dismissDialog()
         dialog = next
         dialogField = field
-        dialogRestorable = restorable
+        dialogType = type
         val focusListener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused ->
             if (focused && dialog === next) onWindowFocusGained()
         }

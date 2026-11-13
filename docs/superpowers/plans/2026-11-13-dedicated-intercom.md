@@ -143,11 +143,13 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** AppSettings 增加 `isIdleReturnEnabled(): Boolean`、`idleReturnMinutes(): Int`、`saveIdleReturn(enabled: Boolean, minutes: Int): Boolean`；默认意图开启、3 分钟，取值 1～30。UserInteractionService 是独立系统无障碍入口，必要计时函数留在同文件，使用已有 SessionScheduler 验证；订阅现有门禁服务的通话投影，不拥有连接。开关/时长保存在普通私有偏好，首次解锁前不读取；关闭或授权失败都不调用 AppConnection.stop。
 
-- [ ] **Step 1: 先验证必要的平台能力并写失败用例。** 在目标 MatePad 做最小事件探测，用户手动授予系统操作检测权限；确认普通触摸方式不变，米家、系统设置、软键盘、硬件按键和系统控制菜单的操作可可靠重置计时，以及后台回门禁允许条件。随后编写 `returnsOnceAfterThreeMinuteExternalIdle`、`interactionAt179999RestartsDeadline`、`ownPagesNeverAutoNavigate`、`windowRefreshDoesNotCountAsUserInput`、`disabledOrUnauthorizedNeverReturns`、`lockedDeadlineWaitsForNormalUnlock`、`activeCallSuspendsReturn`、`failedForegroundStartDoesNotLoop`、`serviceRecoveryStartsFreshDeadline`、`returnDoesNotRestartListener`；断言 179999 毫秒不返回、180000 毫秒只返回一次、操作后完整重计。
-- [ ] **Step 2: 验证失败与支持范围。** 运行 `./gradlew :app:testDebugUnitTest --tests '*IdleReturnTest'` 和对应设备用例。全局输入探测必须使用目标机事件证据；不能用 MainActivity.onUserInteraction 或固定延时假装其他应用的操作检测。未可靠覆盖的交互记录为受限，先解决实际能力再宣称该功能通过。
-- [ ] **Step 3: 最小实现。** 只新增一个必要的无障碍服务；只订阅交互/前台判断需要的事件元数据，不读取页面内容、不请求触摸探索或模拟手势。保留一个截止时间、一个取消任务；外部操作重计，窗口刷新不续时，门禁任意页不跳转。按系统允许条件复用门禁原任务，保留页面和草稿，不恢复监控，不改变监听。锁屏/暗屏到期仅标记待返回，正常唤醒解锁后再核对；来电/通话优先，结束后仍在外部应用则重新给完整时长。
-- [ ] **Step 4: 验证 R01～R10。** 本机与网络分组加入“闲置后返回门禁”和时长编辑，保存失败不误显示生效；权限不足明确提示并提供系统授权入口，门禁接待仍正常。验证时长变更、关闭、权限撤销、用户持续操作、通话中到期、暗屏到期及拒绝拉起；应用返回只能带来一次 UI 绑定，Socket 实例与通话状态不变。保留米家包查询/启动和现有失败提示。
-- [ ] **Step 5: 清理并提交。** 不把无障碍检测作为 IntercomService 的依赖，不建立通用 IdleManager/多权限探测框架，不把返回偏好迁进 Direct Boot 接待记录；建议 `feat: return to intercom after configurable external idle`。
+**执行调整：** 本轮按用户要求先完成本地开发，暂不安装到现场平板。以下步骤的完成状态只代表本地实现、隔离模拟器和代码审查；目标 MatePad 的安装、手动授权、米家/键盘/按键/系统菜单覆盖与 R01～R10 现场验收保留到任务 6，不将模拟器事件等同全局真实输入。公开事件对部分自绘或空白区域不能保证上报，界面须明确说明。
+
+- [x] **Step 1: 本地能力探测与失败用例。** 验证系统服务的元数据、常规触摸保持及隔离模拟器的外部设置操作/回前台；目标机输入覆盖按上述调整后移。编写 `returnsOnceAfterThreeMinuteExternalIdle`、`interactionAt179999RestartsDeadline`、`ownPagesNeverAutoNavigate`、`windowRefreshDoesNotCountAsUserInput`、`disabledOrUnauthorizedNeverReturns`、`lockedDeadlineWaitsForNormalUnlock`、`activeCallSuspendsReturn`、`failedForegroundStartDoesNotLoop`、`serviceRecoveryStartsFreshDeadline`，并用真实任务复用用例验证不重启监听；断言 179999 毫秒不返回、180000 毫秒只返回一次、操作后完整重计。
+- [x] **Step 2: 验证失败与支持范围。** 运行 `./gradlew :app:testDebugUnitTest --tests '*IdleReturnTest'` 和对应设备用例。全局输入探测必须使用目标机事件证据；不能用 MainActivity.onUserInteraction 或固定延时假装其他应用的操作检测。未可靠覆盖的交互记录为受限，先解决实际能力再宣称该功能通过。
+- [x] **Step 3: 最小实现。** 只新增一个必要的无障碍服务；只订阅交互/前台判断需要的事件元数据，不读取页面内容、不请求触摸探索或模拟手势。保留一个截止时间、一个取消任务；外部操作重计，窗口刷新不续时，门禁任意页不跳转。按系统允许条件复用门禁原任务，保留页面和草稿，不恢复监控，不改变监听。锁屏/暗屏到期仅标记待返回，正常唤醒解锁后再核对；来电/通话优先，结束后仍在外部应用则重新给完整时长。
+- [x] **Step 4: 验证 R01～R10 本地规则与接入。** 本机与网络分组加入“闲置后返回门禁”和时长编辑，保存失败不误显示生效；权限不足明确提示并提供系统授权入口，门禁接待仍正常。验证时长变更、关闭、权限撤销、用户持续操作、通话中到期、暗屏到期及拒绝拉起；应用返回只能带来一次 UI 绑定，接待传输实例与通话状态不变。保留米家包查询/启动和现有失败提示。目标机实际操作覆盖不在此标为通过。
+- [x] **Step 5: 清理并提交。** 不把无障碍检测作为 IntercomService 的依赖，不建立通用 IdleManager/多权限探测框架，不把返回偏好迁进 Direct Boot 接待记录；建议 `feat: return to intercom after configurable external idle`。
 
 ## Task 6: P5 整体回归、结构复核与真实验收
 

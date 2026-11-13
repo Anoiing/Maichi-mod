@@ -13,6 +13,61 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppSettingsTest {
+    @Test fun idleReturnDefaultsAndSavingStayOutsideReceptionStorage() {
+        val store = AppSettings(context()) { true }
+        store.load()
+        val runtime = File(root, "device/intercom.json").readBytes()
+        assertTrue(store.isIdleReturnEnabled())
+        assertEquals(3, store.idleReturnMinutes())
+        assertTrue(store.saveIdleReturn(false, 7))
+        assertFalse(store.isIdleReturnEnabled())
+        assertEquals(7, store.idleReturnMinutes())
+        assertArrayEquals(runtime, File(root, "device/intercom.json").readBytes())
+        assertFalse(store.saveIdleReturn(true, 0))
+        assertFalse(store.saveIdleReturn(true, 31))
+        assertFalse(store.isIdleReturnEnabled())
+        assertEquals(7, store.idleReturnMinutes())
+    }
+
+    @Test fun lockedIdleSettingsNeverReadCredentialStorage() {
+        val store = AppSettings(context()) { false }
+        assertFalse(store.isIdleReturnEnabled())
+        assertEquals(3, store.idleReturnMinutes())
+        assertFalse(store.saveIdleReturn(true, 3))
+        assertEquals(0, credentialReads)
+    }
+
+    @Test fun corruptOrUnwritableIdleSettingsDoNotActivateTheFeature() {
+        val ctx = context()
+        val file = File(ctx.filesDir, "idle-return.json")
+        file.writeText("invalid")
+        val store = AppSettings(ctx) { true }
+        assertFalse(store.idleReturnOptions().valid)
+        assertFalse(store.isIdleReturnEnabled())
+        assertTrue(store.saveIdleReturn(true, 5))
+        assertTrue(store.idleReturnOptions().valid)
+        assertEquals(5, store.idleReturnMinutes())
+        assertTrue(file.delete())
+        assertTrue(file.mkdir())
+        File(file, "occupied").writeText("keep")
+        assertFalse(store.saveIdleReturn(true, 2))
+        assertFalse(store.isIdleReturnEnabled())
+    }
+
+    @Test fun missingOrWrongIdleFieldTypesFailClosed() {
+        val ctx = context()
+        val file = File(ctx.filesDir, "idle-return.json")
+        val store = AppSettings(ctx) { true }
+        for (json in listOf("{}", "{\"version\":1,\"minutes\":3,\"enabled\":{}}",
+            "{\"version\":1,\"minutes\":3.5,\"enabled\":true}",
+            "{\"version\":1,\"minutes\":\"3\",\"enabled\":true}",
+            "{\"version\":1,\"minutes\":3,\"enabled\":\"true\"}")) {
+            file.writeText(json)
+            assertFalse(store.idleReturnOptions().valid)
+            assertFalse(store.isIdleReturnEnabled())
+        }
+    }
+
     @Test fun freshInstallWaitsForExplicitReceptionChoice() {
         val store = AppSettings(context()) { true }
         store.load()

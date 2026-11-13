@@ -13,6 +13,64 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SettingsInteractionTest {
+    @Test fun idleSaveFailureAndInvalidMinutesKeepTheDraft() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        var options = IdleReturnOptions()
+        var accept = false
+        var saves = 0
+        lateinit var settings: ConnectionSettingsView
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val page = activity.findViewById<android.view.View>(R.id.settings_page)
+                settings = ConnectionSettingsView(page, { ConnectionOptions() }, { _, done -> done(false) }, {},
+                    currentIdleOptions = { options }, onSaveIdleReturn = { updated, done ->
+                        saves++; if (accept) options = updated; done(accept)
+                    })
+                settings.renderIdleReturn(options, authorized = false, returnFailed = false)
+                val toggle = page.findViewById<android.widget.CompoundButton>(R.id.idle_return_enabled)
+                assertTrue(toggle.isChecked)
+                toggle.performClick()
+                assertTrue("Failed save must restore the saved choice", toggle.isChecked)
+                assertEquals(1, saves)
+                assertTrue(page.findViewById<android.widget.TextView>(R.id.idle_return_hint).text.toString()
+                    .contains(activity.getString(R.string.idle_authorization_required)))
+                settings.restoreDialogState(Bundle().apply { putString("type", "IDLE"); putString("value", "0") })
+            }
+            fun save() {
+                instrumentation.waitForIdleSync()
+                val automation = instrumentation.uiAutomation
+                automation.waitForIdle(200, 5000)
+                assertTrue(automation.rootInActiveWindow.findAccessibilityNodeInfosByText("保存")
+                    .first { it.isClickable }.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                instrumentation.waitForIdleSync()
+            }
+            save()
+            scenario.onActivity {
+                assertEquals(1, saves)
+                assertEquals("0", settings.saveDialogState()?.getString("value"))
+                assertTrue(settings.saveDialogState()!!.getBoolean("error"))
+                settings.restoreDialogState(Bundle().apply {
+                    putString("type", "IDLE"); putString("value", "8")
+                    putInt("selection_start", 0); putInt("selection_end", 1)
+                })
+            }
+            save()
+            scenario.onActivity {
+                val draft = requireNotNull(settings.saveDialogState())
+                assertEquals("8", draft.getString("value"))
+                assertTrue(draft.getBoolean("error"))
+                settings.dismissDialog(); settings.restoreDialogState(draft)
+                assertEquals("8", settings.saveDialogState()?.getString("value"))
+                accept = true
+            }
+            save()
+            scenario.onActivity {
+                assertEquals(8, options.minutes)
+                assertNull(settings.saveDialogState())
+            }
+        }
+    }
+
     @Test fun networkRecoveryExplanationAndPermissionGuidanceAreVisibleTogether() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

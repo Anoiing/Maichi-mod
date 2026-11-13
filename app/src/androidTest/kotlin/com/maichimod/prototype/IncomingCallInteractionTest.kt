@@ -46,13 +46,13 @@ class IncomingCallInteractionTest {
             it.findViewById<android.view.View>(R.id.edit_setting).performClick()
         }
         instrumentation.waitForIdleSync()
-        fixture.shell("cmd statusbar expand-notifications")
-        val deadline = android.os.SystemClock.elapsedRealtime() + 5000
-        while (instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString() != "com.android.systemui" && android.os.SystemClock.elapsedRealtime() < deadline) {
-            android.os.SystemClock.sleep(50)
-        }
-        assertEquals("com.android.systemui", instrumentation.uiAutomation.rootInActiveWindow.packageName.toString())
         try {
+            fixture.shell("cmd statusbar expand-notifications")
+            val deadline = android.os.SystemClock.elapsedRealtime() + 5000
+            while (instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString() != "com.android.systemui" && android.os.SystemClock.elapsedRealtime() < deadline) {
+                android.os.SystemClock.sleep(50)
+            }
+            assertEquals("com.android.systemui", instrumentation.uiAutomation.rootInActiveWindow.packageName.toString())
             fixture.owner.simulateIncoming()
             awaitState(fixture.owner) { it.inCall && it.video == VideoHealth.AVAILABLE }
             val collapsedAt = android.os.SystemClock.elapsedRealtime()
@@ -173,15 +173,154 @@ class IncomingCallInteractionTest {
         fixture.owner.simulateIncoming()
         awaitState(fixture.owner) { it.inCall && it.callKey != old }
         val current = requireNotNull(fixture.owner.currentState.callKey)
+        val deliveredAt = android.os.SystemClock.elapsedRealtime()
         val shown = awaitCall {
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 activity.startActivity(IncomingCallActivity.createIntent(fixture.context, current))
             }
         }
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-        assertFalse(shown.isFinishing)
-        assertEquals(current, IncomingCallActivity.readKey(shown.intent))
+        awaitAdoptedKey(shown, current, deliveredAt)
         assertEquals(CallStatus.RINGING, fixture.owner.currentState.call)
+    }
+
+    @Test fun staleIntentCannotReplaceTheNextCallWhileBindingIsPending() = pendingIntentOrder(false, false)
+    @Test fun pendingCurrentAnswerSurvivesAStaleIntent() = pendingIntentOrder(true, false)
+    @Test fun pendingCurrentAnswerSurvivesRecreationAndAStaleIntent() = pendingIntentOrder(true, true)
+    @Test fun pendingAnswerSurvivesCurrentPresentation() = pendingIntentOrder(true, false, repeatCurrent = true)
+    @Test fun pendingAnswerSurvivesRecreationAndCurrentPresentation() = pendingIntentOrder(true, true, repeatCurrent = true)
+    @Test fun returningDuringNextCallBindingTargetsThePresentedCall() = pendingIntentOrder(false, false, finishWhileWaiting = true)
+
+    @Test fun validatedRecreatingPageAcceptsRemoteNextCallWithoutAnotherIntent() = RunningIntercom().use { fixture ->
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = awaitCall { fixture.owner.simulateIncoming() }
+        val old = requireNotNull(fixture.owner.currentState.callKey)
+        awaitAdoptedKey(activity, old)
+        showExternalSettings(fixture)
+        val returned = awaitCall { instrumentation.runOnMainSync {
+            activity.startActivity(IncomingCallActivity.createIntent(fixture.context, old))
+        } }
+        awaitAdoptedKey(returned, old)
+        val worker = AppConnection::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(fixture.owner) as android.os.Handler
+        val receive = AppConnection::class.java.getDeclaredMethod("receive", com.maichimod.prototype.transport.ReceivedDatagram::class.java).apply { isAccessible = true }
+        val callback = ActivityLifecycleCallback { next, stage ->
+            if (next is IncomingCallActivity && next !== returned && stage == Stage.CREATED) {
+                val packet = com.maichimod.prototype.protocol.CallPackets.encodeSignal(com.maichimod.prototype.protocol.CallCommand.CLOSE,
+                    com.maichimod.prototype.protocol.DEMO_PROFILE, com.maichimod.prototype.protocol.DEMO_PEER_IP)
+                val ring = com.maichimod.prototype.protocol.CallPackets.encodeSignal(com.maichimod.prototype.protocol.CallCommand.NEGOTIATE,
+                    com.maichimod.prototype.protocol.DEMO_PROFILE, com.maichimod.prototype.protocol.DEMO_PEER_IP).copyOf(256).apply {
+                        this[10] = 1; this[14] = 0; this[15] = 1
+                    }
+                val query = com.maichimod.prototype.protocol.CallPackets.encodeDiscoveryReply(com.maichimod.prototype.protocol.DEMO_PROFILE.indoorId)
+                    .apply { this[0] = 1 }
+                val lookup = com.maichimod.prototype.protocol.CallPackets.encodeRoster(com.maichimod.prototype.protocol.DEMO_PROFILE)
+                    .copyOf(32).apply { this[10] = 1; this[14] = 32; this[15] = 0 }
+                worker.post {
+                    for ((port, bytes) in listOf(10000 to packet, 10008 to query, 10000 to lookup, 10000 to ring)) {
+                        receive.invoke(fixture.owner, com.maichimod.prototype.transport.ReceivedDatagram(
+                            com.maichimod.prototype.protocol.DEMO_PEER_IP, port, port, bytes))
+                    }
+                }
+            }
+        }
+        val monitor = ActivityLifecycleMonitorRegistry.getInstance()
+        instrumentation.runOnMainSync { monitor.addLifecycleCallback(callback) }
+        try {
+            val recreated = awaitCall { instrumentation.runOnMainSync { returned.recreate() } }
+            awaitState(fixture.owner) { it.inCall && it.callKey != old }
+            awaitAdoptedKey(recreated, requireNotNull(fixture.owner.currentState.callKey))
+            assertEquals(CallStatus.RINGING, fixture.owner.currentState.call)
+        } finally { instrumentation.runOnMainSync { monitor.removeLifecycleCallback(callback) } }
+    }
+
+    private fun pendingIntentOrder(answerCurrent: Boolean, recreateWhileWaiting: Boolean, repeatCurrent: Boolean = false,
+        finishWhileWaiting: Boolean = false) = RunningIntercom().use { fixture ->
+        val activity = awaitCall { fixture.owner.simulateIncoming() }
+        val old = requireNotNull(fixture.owner.currentState.callKey)
+        showExternalSettings(fixture)
+        fixture.owner.hangUpCall(old)
+        awaitState(fixture.owner) { !it.inCall }
+        fixture.owner.simulateIncoming()
+        awaitState(fixture.owner) { it.inCall && it.callKey != old }
+        val current = requireNotNull(fixture.owner.currentState.callKey)
+        val worker = AppConnection::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(fixture.owner) as android.os.Handler
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val passed = CountDownLatch(1)
+        worker.post { blocked.countDown(); release.await(15, TimeUnit.SECONDS); passed.countDown() }
+        assertTrue(blocked.await(2, TimeUnit.SECONDS))
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        lateinit var shown: IncomingCallActivity
+        try {
+            shown = awaitCall { instrumentation.runOnMainSync {
+                activity.startActivity(IncomingCallActivity.createIntent(fixture.context, current, answer = answerCurrent))
+            } }
+            instrumentation.runOnMainSync {
+                assertEquals(fixture.context.getString(R.string.reception_restoring), shown.findViewById<android.widget.TextView>(R.id.call_state).text.toString())
+            }
+            if (recreateWhileWaiting) shown = awaitCall { instrumentation.runOnMainSync { shown.recreate() } }
+            val repeated = awaitCall { instrumentation.runOnMainSync {
+                shown.startActivity(IncomingCallActivity.createIntent(fixture.context, if (repeatCurrent) current else old,
+                    answer = !repeatCurrent && !answerCurrent))
+            } }
+            assertSame(shown, repeated)
+            assertEquals("deadline check escaped the controlled wait", 1L, passed.count)
+            instrumentation.runOnMainSync {
+                assertFalse(shown.findViewById<android.view.View>(R.id.call_action).isEnabled)
+                assertFalse(shown.findViewById<android.view.View>(R.id.unlock_call).isEnabled)
+                if (finishWhileWaiting) shown.findViewById<android.view.View>(R.id.call_back).performClick()
+            }
+        } finally { release.countDown() }
+        if (finishWhileWaiting) {
+            awaitState(fixture.owner) { !it.inCall }
+            assertEquals(current, fixture.owner.currentState.callKey)
+            return@use
+        }
+        awaitAdoptedKey(shown, current)
+        if (answerCurrent) awaitState(fixture.owner) { it.call == CallStatus.ANSWERED }
+        else assertEquals(CallStatus.RINGING, fixture.owner.currentState.call)
+    }
+
+    @Test fun oldAnsweredAudioRetryWaitsForFreshBinding() = RunningIntercom().use { fixture ->
+        val activity = awaitCall { fixture.owner.simulateIncoming() }
+        val key = requireNotNull(fixture.owner.currentState.callKey)
+        fixture.owner.answerCall(key)
+        awaitState(fixture.owner) { it.call == CallStatus.ANSWERED && it.playback == AudioHealth.AVAILABLE }
+        val manager = fixture.context.getSystemService(android.media.AudioManager::class.java)
+        val focus = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+            .setOnAudioFocusChangeListener { }.build()
+        val release = CountDownLatch(1)
+        try {
+            assertEquals(android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED, manager.requestAudioFocus(focus))
+            awaitState(fixture.owner) { it.playback == AudioHealth.UNAVAILABLE }
+            showExternalSettings(fixture)
+            val worker = AppConnection::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(fixture.owner) as android.os.Handler
+            val blocked = CountDownLatch(1)
+            worker.post { blocked.countDown(); release.await(15, TimeUnit.SECONDS) }
+            assertTrue(blocked.await(2, TimeUnit.SECONDS))
+            val shown = awaitCall { InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                activity.startActivity(IncomingCallActivity.createIntent(fixture.context, key))
+            } }
+            val problems = mutableListOf<String>()
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val retry = shown.findViewById<android.view.View>(R.id.retry_call_audio)
+                assertEquals(android.view.View.VISIBLE, retry.visibility)
+                if (retry.isEnabled) problems.add("audio retry remained enabled while binding")
+                retry.callOnClick() // Also covers a click callback already queued before disabling.
+                if (IncomingCallActivity::class.java.getDeclaredField("queuedAudioAction").apply { isAccessible = true }.get(shown) != null) {
+                    problems.add("loading callback queued an audio action")
+                }
+            }
+            release.countDown()
+            assertEquals(emptyList<String>(), problems)
+            val due = android.os.SystemClock.elapsedRealtime() + 2000
+            var enabled = false
+            while (!enabled && android.os.SystemClock.elapsedRealtime() < due) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { enabled = shown.findViewById<android.view.View>(R.id.retry_call_audio).isEnabled }
+                if (!enabled) android.os.SystemClock.sleep(20)
+            }
+            assertTrue("audio retry did not recover after binding", enabled)
+        } finally { release.countDown(); manager.abandonAudioFocusRequest(focus) }
     }
 
     @Test fun staleNotificationDoesNotAnswerOrDismissCurrentCall() = RunningIntercom().use { fixture ->
@@ -257,19 +396,42 @@ class IncomingCallInteractionTest {
 
     private fun awaitCall(action: () -> Unit) = awaitIncomingCall(action = action)
 
+    private fun awaitAdoptedKey(activity: IncomingCallActivity, expected: CallKey,
+        deliveredAt: Long = android.os.SystemClock.elapsedRealtime()) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        var observed: CallKey? = null
+        var finishing = false
+        var ready = false
+        do {
+            instrumentation.runOnMainSync {
+                observed = IncomingCallActivity.readKey(activity.intent); finishing = activity.isFinishing
+                ready = activity.findViewById<android.view.View>(R.id.call_action).isEnabled
+            }
+            if (observed == expected && !finishing && ready) return
+            android.os.SystemClock.sleep(20)
+        } while (android.os.SystemClock.elapsedRealtime() - deliveredAt < 2000)
+        assertFalse("Current call activity was dismissed", finishing)
+        assertEquals("Current call key not adopted within 2 seconds", expected, observed)
+        assertTrue("Current call controls not ready within 2 seconds", ready)
+    }
+
     private fun showExternalSettings(fixture: RunningIntercom) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        var previous: Activity? = null
         instrumentation.runOnMainSync {
             val visible = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).firstOrNull()
             checkNotNull(visible) { "No foreground activity to launch settings" }
-            visible.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            previous = visible
+            visible.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         }
         val deadline = android.os.SystemClock.elapsedRealtime() + 5000
         var observed: String? = null
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
             instrumentation.waitForIdleSync()
             observed = instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()
-            if (observed == "com.android.settings") return
+            var stopped = false
+            instrumentation.runOnMainSync { stopped = previous in ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.STOPPED) }
+            if (observed == "com.android.settings" && stopped) return
             android.os.SystemClock.sleep(50)
         }
         error("External settings not foreground: package=$observed call=${fixture.owner.currentState.call}")

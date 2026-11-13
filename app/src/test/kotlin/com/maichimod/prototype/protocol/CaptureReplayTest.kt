@@ -59,6 +59,45 @@ class CaptureReplayTest {
         assertEquals(expectedAudioPackets, audioPackets)
     }
 
+    @Test
+    fun garageCapturesIdentifyBusyWithoutMistakingNormalAcknowledgementsAndDecodeEveryFrame() {
+        val directory = System.getProperty("maichi.fixtureDir")
+        assumeTrue("Set maichiFixtureDir to verify the local captures", directory != null)
+        assumeTrue("Export the optional garage busy capture", File(directory, CaptureFixtures.BASEMENT_ONE_BUSY_RX).isFile)
+        assumeTrue("Export both garage stations", File(directory, CaptureFixtures.BASEMENT_TWO_RX).isFile)
+        val busyRows = fixture(CaptureFixtures.BASEMENT_ONE_BUSY_RX)
+        assertEquals(2, busyRows.size)
+        assertEquals(1, busyRows.count { MaichiPackets.decode(it.localPort, it.payload) is MaichiPacket.MonitorBusy })
+        assertEquals(2022, fixture(CaptureFixtures.BASEMENT_TWO_RX).size)
+        verifyFrames(CaptureFixtures.BASEMENT_TWO_RX, 139, 150)
+    }
+
+    @Test
+    fun successfulGarageOneMonitoringDecodesEveryFrame() {
+        val directory = System.getProperty("maichi.fixtureDir")
+        assumeTrue("Set maichiFixtureDir to verify the local captures", directory != null)
+        assumeTrue("Export garage 1", File(directory, CaptureFixtures.BASEMENT_ONE_RX).isFile)
+        val rows = fixture(CaptureFixtures.BASEMENT_ONE_RX)
+        assumeTrue("Export the successful garage 1 video instead of the original busy-only capture", rows.size != 2)
+        assertEquals(11213, rows.size)
+        verifyFrames(CaptureFixtures.BASEMENT_ONE_RX, 743, 859)
+    }
+
+    @Test
+    fun garageOneRequestsMatchTheExistingMonitorEncoder() {
+        val directory = System.getProperty("maichi.fixtureDir")
+        assumeTrue("Set maichiFixtureDir to verify the local captures", directory != null)
+        assumeTrue("Export the outgoing garage capture", File(directory, CaptureFixtures.BASEMENT_ONE_TX).isFile)
+        val one = fixture(CaptureFixtures.BASEMENT_ONE_TX)
+        assertEquals(49, one.size)
+        assertArrayEquals(MaichiPackets.encodeDiscovery(DEMO_PROFILE.peerId), one[0].payload)
+        val commands = listOf(MonitorCommand.OPEN, MonitorCommand.PROBE) +
+            List(45) { MonitorCommand.KEEP_ALIVE } + MonitorCommand.CLOSE
+        commands.forEachIndexed { index, command ->
+            assertArrayEquals(MaichiPackets.encodeMonitor(command, DEMO_PROFILE, DEMO_PEER_IP), one[index + 1].payload)
+        }
+    }
+
     private fun fixture(name: String): List<CaptureRow> {
         val directory = System.getProperty("maichi.fixtureDir")
         assumeTrue("Set maichiFixtureDir to verify the local captures", directory != null)

@@ -22,7 +22,7 @@ internal interface SessionScheduler {
     fun schedule(delayMs: Long, action: () -> Unit): Cancellation
 }
 
-internal enum class MonitorStatus { IDLE, DISCOVERING, CONNECTING, VIEWING, ENDED, TIMED_OUT, DISCONNECTED }
+internal enum class MonitorStatus { IDLE, DISCOVERING, CONNECTING, VIEWING, ENDED, BUSY, TIMED_OUT, DISCONNECTED }
 internal enum class ElevatorStatus { IDLE, DISCOVERING, WAITING, RESPONDED, TIMED_OUT, DISCONNECTED }
 
 internal data class TerminalState(
@@ -50,8 +50,10 @@ internal class TerminalSession<Frame : Any>(
 
     private val jpegAssembler = JpegAssembler()
     private var monitorPeer: Inet4Address? = null
+    private var monitorProfile = profile
     private var elevatorPeer: Inet4Address? = null
     private var monitorTimeout: Cancellation? = null
+    private var monitorLimit: Cancellation? = null
     private var monitorPeriodic: Cancellation? = null
     private var elevatorTimeout: Cancellation? = null
     private var lastFrameTime = 0L
@@ -59,36 +61,40 @@ internal class TerminalSession<Frame : Any>(
     private var audioPackets = 0
     private var closed = false
 
-    fun openMonitor() {
+    fun openMonitor(selectedProfile: TerminalProfile = profile) {
         if (closed || state.monitor == MonitorStatus.DISCOVERING || monitorPeer != null) return
-        val discoveryPending = state.elevator == ElevatorStatus.DISCOVERING
+        monitorProfile = selectedProfile
+        val discoveryPending = state.elevator == ElevatorStatus.DISCOVERING && monitorProfile.peerId == profile.peerId
         setMonitor(MonitorStatus.DISCOVERING)
         monitorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) {
             endMonitor(MonitorStatus.TIMED_OUT, notifyPeer = false)
         }
-        if (!discoveryPending) discover()
+        monitorLimit = scheduler.schedule(MONITOR_LIMIT_MS) {
+            endMonitor(MonitorStatus.ENDED, notifyPeer = true)
+        }
+        if (!discoveryPending) discover(monitorProfile)
     }
 
     fun closeMonitor() = endMonitor(MonitorStatus.IDLE, notifyPeer = true)
 
     fun callElevator() {
         if (closed || state.elevator == ElevatorStatus.DISCOVERING || state.elevator == ElevatorStatus.WAITING) return
-        val discoveryPending = state.monitor == MonitorStatus.DISCOVERING
+        val discoveryPending = state.monitor == MonitorStatus.DISCOVERING && monitorProfile.peerId == profile.peerId
         setElevator(ElevatorStatus.DISCOVERING)
         elevatorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) { endElevator(ElevatorStatus.TIMED_OUT) }
-        if (!discoveryPending) discover()
+        if (!discoveryPending) discover(profile)
     }
 
     fun receive(datagram: ReceivedDatagram) {
         if (closed || datagram.sourcePort != datagram.localPort) return
         when (val packet = MaichiPackets.decode(datagram.localPort, datagram.payload)) {
             is MaichiPacket.DiscoveryReply -> {
-                if (packet.peerId != profile.peerId || datagram.source == profile.localAddress ||
-                    (profile.expectedPeerAddress != null && datagram.source != profile.expectedPeerAddress) ||
-                    datagram.source.isAnyLocalAddress || datagram.source.isMulticastAddress
-                ) return
-                if (state.monitor == MonitorStatus.DISCOVERING) beginMonitor(datagram.source)
-                if (state.elevator == ElevatorStatus.DISCOVERING) beginElevator(datagram.source)
+                if (state.monitor == MonitorStatus.DISCOVERING && acceptsDiscovery(datagram.source, packet, monitorProfile)) {
+                    beginMonitor(datagram.source)
+                }
+                if (state.elevator == ElevatorStatus.DISCOVERING && acceptsDiscovery(datagram.source, packet, profile)) {
+                    beginElevator(datagram.source)
+                }
             }
             is MaichiPacket.MonitorControl -> {
                 if (packet.type == MonitorCommand.CLOSE.type && isMonitorPeer(datagram.source, packet.identity)) {
@@ -97,6 +103,11 @@ internal class TerminalSession<Frame : Any>(
             }
             is MaichiPacket.Media -> {
                 if (isMonitorPeer(datagram.source, packet.identity)) receiveMedia(packet.fragment)
+            }
+            is MaichiPacket.MonitorBusy -> {
+                if (state.monitor == MonitorStatus.CONNECTING && isMonitorPeer(datagram.source, packet.identity)) {
+                    endMonitor(MonitorStatus.BUSY, notifyPeer = false)
+                }
             }
             MaichiPacket.ElevatorReply -> {
                 if (state.elevator == ElevatorStatus.WAITING && datagram.source == elevatorPeer) {
@@ -124,9 +135,14 @@ internal class TerminalSession<Frame : Any>(
         transport.close()
     }
 
-    private fun discover() {
-        send(MaichiPackets.DISCOVERY_PORT, profile.broadcastAddress, MaichiPackets.encodeDiscovery(profile.peerId))
+    private fun discover(selectedProfile: TerminalProfile) {
+        send(MaichiPackets.DISCOVERY_PORT, selectedProfile.broadcastAddress, MaichiPackets.encodeDiscovery(selectedProfile.peerId))
     }
+
+    private fun acceptsDiscovery(source: Inet4Address, packet: MaichiPacket.DiscoveryReply, selected: TerminalProfile): Boolean =
+        packet.peerId == selected.peerId && source != selected.localAddress &&
+            (selected.expectedPeerAddress == null || source == selected.expectedPeerAddress) &&
+            !source.isAnyLocalAddress && !source.isMulticastAddress
 
     private fun beginMonitor(peer: Inet4Address) {
         monitorTimeout?.cancel()
@@ -171,14 +187,16 @@ internal class TerminalSession<Frame : Any>(
     }
 
     private fun isMonitorPeer(source: Inet4Address, identity: MonitorIdentity): Boolean =
-        source == monitorPeer && source == identity.peerAddress && identity.peerId == profile.peerId &&
-            identity.indoorAddress == profile.localAddress && identity.indoorId == profile.indoorId
+        source == monitorPeer && source == identity.peerAddress && identity.peerId == monitorProfile.peerId &&
+            identity.indoorAddress == monitorProfile.localAddress && identity.indoorId == monitorProfile.indoorId
 
     private fun endMonitor(status: MonitorStatus, notifyPeer: Boolean) {
         val peer = monitorPeer
         monitorPeer = null
         monitorTimeout?.cancel()
         monitorTimeout = null
+        monitorLimit?.cancel()
+        monitorLimit = null
         monitorPeriodic?.cancel()
         monitorPeriodic = null
         jpegAssembler.clear()
@@ -206,7 +224,7 @@ internal class TerminalSession<Frame : Any>(
     }
 
     private fun sendMonitor(command: MonitorCommand, peer: Inet4Address): Boolean =
-        send(MaichiPackets.SESSION_PORT, peer, MaichiPackets.encodeMonitor(command, profile, peer))
+        send(MaichiPackets.SESSION_PORT, peer, MaichiPackets.encodeMonitor(command, monitorProfile, peer))
 
     private fun send(port: Int, peer: Inet4Address, payload: ByteArray): Boolean {
         if (closed) return false
@@ -234,6 +252,7 @@ internal class TerminalSession<Frame : Any>(
     }
 
     companion object {
+        private const val MONITOR_LIMIT_MS = 30_000L
         private const val DISCOVERY_TIMEOUT_MS = 2_000L
         private const val VIDEO_TIMEOUT_MS = 5_000L
         private const val ELEVATOR_TIMEOUT_MS = 3_000L

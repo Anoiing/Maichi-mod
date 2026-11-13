@@ -128,7 +128,9 @@ internal class EthernetTransport(
                 opened[port] = socket
                 link.network.bindSocket(socket)
                 socket.broadcast = port == MaichiPackets.DISCOVERY_PORT
-                socket.bind(InetSocketAddress(link.address, port))
+                // Indoor discovery arrives at the subnet broadcast address, before the unicast call.
+                socket.bind(if (port == MaichiPackets.DISCOVERY_PORT) InetSocketAddress("0.0.0.0", port)
+                    else InetSocketAddress(link.address, port))
             }
             return opened
         } catch (failure: Exception) {

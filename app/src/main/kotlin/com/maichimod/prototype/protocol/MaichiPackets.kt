@@ -33,6 +33,7 @@ internal data class MediaFragment(
 internal sealed interface MaichiPacket {
     data class DiscoveryReply(val peerId: String) : MaichiPacket
     data class MonitorControl(val type: Int, val identity: MonitorIdentity) : MaichiPacket
+    data class MonitorBusy(val identity: MonitorIdentity) : MaichiPacket
     data class Media(val fragment: MediaFragment, val identity: MonitorIdentity) : MaichiPacket
     data object ElevatorReply : MaichiPacket
 }
@@ -87,7 +88,10 @@ internal object MaichiPackets {
         }
         if (localPort != SESSION_PORT || payload.size < 16 || !payload.startsWithAt(magic, 0)) return null
         val type = payload.u16(10)
-        if (payload.u16(14) != payload.size) return null
+        // The captured busy response is an 80-byte reply echoing the 172-byte OPEN length.
+        val busy = payload.size == MONITOR_HEADER_LENGTH && payload[8] == 0xb8.toByte() &&
+            payload[9].toInt() == 0 && type == 0x02 && payload.u16(14) == MonitorCommand.OPEN.length
+        if (payload.u16(14) != payload.size && !busy) return null
         if (payload[8].toInt() == 0x06 && payload[9].toInt() == 0x01) {
             return MaichiPacket.ElevatorReply.takeIf { type == 0x02 && payload.size == 32 }
         }
@@ -101,6 +105,7 @@ internal object MaichiPackets {
             peerId = payload.identifier(56, 'M') ?: return null,
             peerAddress = payload.ipv4At(76),
         )
+        if (busy) return MaichiPacket.MonitorBusy(identity)
         return when (type) {
             0x02, 0x0c, 0x1e -> MaichiPacket.MonitorControl(type, identity)
                 .takeIf { payload.size == MONITOR_HEADER_LENGTH }

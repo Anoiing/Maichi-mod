@@ -2,6 +2,7 @@ package com.maichimod.prototype.protocol
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -61,6 +62,17 @@ class MaichiPacketsTest {
         assertNull(MaichiPackets.decode(10000, packet.copyOf(93)))
         packet[86] = 2
         assertNull(MaichiPackets.decode(10000, packet))
+    }
+
+    @Test
+    fun acceptsTheCapturedBusyReplyWithTheOpenRequestLength() {
+        val busy = MaichiPackets.encodeMonitor(MonitorCommand.PROBE, DEMO_PROFILE, DEMO_PEER_IP).apply {
+            this[10] = 2
+            this[14] = 172.toByte()
+        }
+        assertNotNull(MaichiPackets.decode(10000, busy))
+        busy[14] = 171.toByte()
+        assertNull(MaichiPackets.decode(10000, busy))
     }
 
     @Test

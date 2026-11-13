@@ -179,6 +179,121 @@ class TerminalSessionTest {
     }
 
     @Test
+    fun activeMonitoringEndsAtThirtySecondsEvenWhenValidFramesKeepArriving() {
+        session.openMonitor()
+        session.receive(discovery())
+        repeat(29) { index ->
+            clock.advance(1_000)
+            session.receive(videoFrame(index + 1))
+        }
+        clock.advance(999)
+        assertEquals(MonitorStatus.VIEWING, session.state.monitor)
+        clock.advance(1)
+        assertEquals(MonitorStatus.ENDED, session.state.monitor)
+        assertEquals(0x1e, transport.sent.last().payload[10].toInt())
+        val sent = transport.sent.size
+        clock.advance(10_000)
+        session.receive(videoFrame(30))
+        assertEquals(sent, transport.sent.size)
+        assertEquals(29, frames.size)
+    }
+
+    @Test
+    fun reopeningMonitorGetsANewThirtySecondLimit() {
+        session.openMonitor()
+        session.receive(discovery())
+        repeat(19) { index ->
+            clock.advance(1_000)
+            session.receive(videoFrame(index + 1))
+        }
+        session.closeMonitor()
+        clock.advance(1_000)
+        session.openMonitor()
+        session.receive(discovery())
+        repeat(29) { index ->
+            clock.advance(1_000)
+            session.receive(videoFrame(index + 1))
+        }
+        assertEquals(MonitorStatus.VIEWING, session.state.monitor)
+        clock.advance(1_000)
+        assertEquals(MonitorStatus.ENDED, session.state.monitor)
+        assertEquals(2, transport.sent.count { it.port == 10000 && it.payload[10].toInt() == 0x1e })
+    }
+
+    @Test
+    fun theMonitorLimitDoesNotCancelAnIndependentElevatorRequest() {
+        session.openMonitor()
+        session.receive(discovery())
+        repeat(29) { index ->
+            clock.advance(1_000)
+            session.receive(videoFrame(index + 1))
+        }
+        session.callElevator()
+        session.receive(discovery())
+        clock.advance(1_000)
+        assertEquals(MonitorStatus.ENDED, session.state.monitor)
+        assertEquals(ElevatorStatus.WAITING, session.state.elevator)
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        assertEquals(ElevatorStatus.RESPONDED, session.state.elevator)
+    }
+
+    @Test
+    fun busyReplyStopsMonitorPollingWithoutClosingTheOccupiedPeer() {
+        session.openMonitor()
+        session.receive(discovery())
+        val busy = MaichiPackets.encodeMonitor(MonitorCommand.PROBE, DEMO_PROFILE, DEMO_PEER_IP).apply {
+            this[10] = 2
+            this[14] = 172.toByte()
+        }
+        session.receive(ReceivedDatagram(DEMO_PEER_IP, 10000, 10000, busy))
+        assertEquals("BUSY", session.state.monitor.name)
+        clock.advance(35_000)
+        session.receive(videoFrame())
+        assertEquals(2, transport.sent.size)
+        assertEquals(0, frames.size)
+        assertEquals("BUSY", session.state.monitor.name)
+    }
+
+    @Test
+    fun garageMonitoringAndUnitElevatorDiscoveryRemainIndependent() {
+        val garageIp = requireNotNull(ipv4Address("192.0.2.21"))
+        val garageProfile = DEMO_PROFILE.copy(peerId = "M00000000002", expectedPeerAddress = garageIp)
+        session.openMonitor(garageProfile)
+        session.callElevator()
+        assertEquals(2, transport.sent.size)
+        session.receive(discovery(garageProfile.peerId).copy(source = garageIp))
+        assertEquals(MonitorStatus.CONNECTING, session.state.monitor)
+        assertEquals(ElevatorStatus.DISCOVERING, session.state.elevator)
+        assertEquals(garageIp, transport.sent.last().target)
+        assertEquals("M00000000002", String(transport.sent.last().payload, 56, 12, Charsets.US_ASCII))
+        session.receive(discovery())
+        assertEquals(ElevatorStatus.WAITING, session.state.elevator)
+        assertEquals(DEMO_PEER_IP, transport.sent.last().target)
+        session.receive(elevatorReply(garageIp))
+        assertEquals(ElevatorStatus.WAITING, session.state.elevator)
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        assertEquals(ElevatorStatus.RESPONDED, session.state.elevator)
+        session.closeMonitor()
+        assertEquals(garageIp, transport.sent.last().target)
+        assertEquals(0x1e, transport.sent.last().payload[10].toInt())
+    }
+
+    @Test
+    fun aNormalAcknowledgementAndAReplyFromAnotherDoorCannotMarkTheMonitorBusy() {
+        session.openMonitor()
+        session.receive(discovery())
+        val ack = MaichiPackets.encodeMonitor(MonitorCommand.PROBE, DEMO_PROFILE, DEMO_PEER_IP).apply { this[10] = 2 }
+        session.receive(ReceivedDatagram(DEMO_PEER_IP, 10000, 10000, ack))
+        assertEquals(MonitorStatus.CONNECTING, session.state.monitor)
+        val busy = ack.copyOf().apply { this[14] = 172.toByte() }
+        session.receive(ReceivedDatagram(requireNotNull(ipv4Address("192.0.2.21")), 10000, 10000, busy))
+        assertEquals(MonitorStatus.CONNECTING, session.state.monitor)
+        session.receive(videoFrame())
+        session.receive(ReceivedDatagram(DEMO_PEER_IP, 10000, 10000, busy))
+        assertEquals(MonitorStatus.VIEWING, session.state.monitor)
+    }
+
+    @Test
     fun permissionFailureDuringDiscoveryIsReportedOnceAndCancelsBothFeatures() {
         val failure = SecurityException("test socket permission failure")
         transport.failure = failure

@@ -19,10 +19,16 @@ internal data class CaptureRow(
 internal object CaptureFixtures {
     const val DIRECTORY = "maichi-local"
     const val MONITOR_RX = "monitor-rx.tsv.gz"
+    const val BASEMENT_ONE_RX = "monitor-basement-1-rx.tsv.gz"
+    const val BASEMENT_ONE_BUSY_RX = "monitor-basement-1-busy-rx.tsv.gz"
+    const val BASEMENT_ONE_TX = "monitor-basement-1-tx.tsv.gz"
+    const val BASEMENT_TWO_RX = "monitor-basement-2-rx.tsv.gz"
     const val MONITOR_RJ4_RX = "monitor-rj4-rx.tsv.gz"
     const val MONITOR_TX = "monitor-tx.tsv.gz"
     const val ELEVATOR_TX = "elevator-tx.tsv.gz"
     const val ELEVATOR_RX = "elevator-rx.tsv.gz"
+    const val CALL_RX = "call-rx.tsv.gz"
+    const val CALL_TX = "call-tx.tsv.gz"
 
     fun read(input: InputStream): List<CaptureRow> = GZIPInputStream(input).bufferedReader(Charsets.US_ASCII).useLines { rows ->
         rows.map { line ->

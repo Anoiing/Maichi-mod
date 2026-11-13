@@ -30,6 +30,8 @@ import com.maichimod.prototype.transport.WiredLink
 
 class MainActivity : Activity() {
     private lateinit var connection: AppConnection
+    private var subscription: com.maichimod.prototype.session.Cancellation? = null
+    private var configurationError = false
     private lateinit var dashboard: View
     private lateinit var monitorSources: View
     private lateinit var monitorPage: View
@@ -103,8 +105,12 @@ class MainActivity : Activity() {
         volumeControls = VolumeControls(settingsPage)
         volumeControlStream = AudioManager.STREAM_MUSIC
 
-        options = ConnectionOptions.load(getPreferences(MODE_PRIVATE), defaultWired = !BuildConfig.DEBUG)
-        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, ::activateMode, onThemeSelected = { theme ->
+        try { options = AppSettings(this).load() }
+        catch (_: IllegalStateException) {
+            configurationError = true
+            Toast.makeText(this, R.string.settings_read_failed, Toast.LENGTH_LONG).show()
+        }
+        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, { connection.retry() }, onThemeSelected = { theme ->
             Appearance.save(this, theme)
             recreate()
         }) {
@@ -113,25 +119,30 @@ class MainActivity : Activity() {
         }
         connectionSettings.renderOptions(options)
         connectionSettings.restoreSection(savedInstanceState?.getInt("settings_section") ?: 0)
-        connection = AppConnection(this, onLink = { status, ethernet ->
-            link = status
-            wiredLink = ethernet
-            renderState()
-        }, onState = { updated ->
-            state = updated
-            if (state.monitor == MonitorStatus.ENDED && monitorPage.visibility == View.VISIBLE) {
-                showPage(monitorSources)
+        connection = AppConnection(this)
+        subscription = connection.observe(object : IntercomObserver {
+            override fun onState(updated: IntercomState) {
+                if (updated.link != null) options = updated.options
+                link = updated.link
+                wiredLink = updated.ethernet
+                state = updated.terminal
+                connectionSettings.renderOptions(options)
+                if (state.monitor == MonitorStatus.ENDED && monitorPage.visibility == View.VISIBLE) showPage(monitorSources)
+                if (updated.call != callStatus || (updated.callKey?.sequence ?: 0) != displayedCallToken) {
+                    renderCall(updated.call, updated.callKey?.sequence ?: 0)
+                }
+                renderState()
             }
-            renderState()
-        }, onFrame = { bitmap ->
-            if (monitorPage.visibility == View.VISIBLE &&
-                (state.monitor == MonitorStatus.VIEWING || state.monitor == MonitorStatus.ENDED)
-            ) preview.setImageBitmap(bitmap)
-        }, onCall = ::renderCall, onCallFrame = { bitmap ->
-            if (callPage.isShown && (callStatus == CallStatus.RINGING || callStatus == CallStatus.ANSWERED)) {
-                callPreview.setImageBitmap(bitmap)
+            override fun onMonitorFrame(frame: android.graphics.Bitmap) {
+                if (monitorPage.isShown && state.monitor == MonitorStatus.VIEWING) preview.setImageBitmap(frame)
             }
-        }, onCallAudio = { pcm -> if (callStatus == CallStatus.ANSWERED) callAudio.enqueue(pcm) })
+            override fun onCallFrame(frame: android.graphics.Bitmap) {
+                if (callPage.isShown) callPreview.setImageBitmap(frame)
+            }
+            override fun onCallAudio(pcm: ByteArray) {
+                if (callStatus == CallStatus.ANSWERED) callAudio.enqueue(pcm)
+            }
+        })
         findViewById<View>(R.id.call_action).setOnClickListener {
             when (callStatus) {
                 CallStatus.RINGING -> answerCall()
@@ -158,7 +169,7 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.sources_back).setOnClickListener { showPage(dashboard) }
         findViewById<View>(R.id.monitor_back).setOnClickListener { showPage(monitorSources) }
         retry.setOnClickListener {
-            if (link == LinkStatus.WIRED_ERROR) activateMode() else openMonitor()
+            if (link == LinkStatus.WIRED_ERROR) connection.retry() else openMonitor()
         }
         findViewById<View>(R.id.settings_button).setOnClickListener { showSettings() }
         findViewById<View>(R.id.settings_back).setOnClickListener { showPage(dashboard) }
@@ -183,6 +194,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         unregisterBack?.invoke()
         connectionSettings.dismissDialog()
+        subscription?.cancel()
         connection.close()
         super.onDestroy()
     }
@@ -249,7 +261,7 @@ class MainActivity : Activity() {
         wiredLink = null
         state = TerminalState()
         renderState()
-        connection.start(options)
+        if (!configurationError) connection.start(options)
     }
 
     private fun openMonitor(source: MonitorSource = selectedSource) {
@@ -474,13 +486,18 @@ class MainActivity : Activity() {
         volumeControls.refresh()
     }
 
-    private fun saveOptions(updated: ConnectionOptions) {
-        if (updated == options) return
-        val reconnect = updated.requiresReconnect(options)
-        updated.save(getPreferences(MODE_PRIVATE))
-        options = updated
-        connectionSettings.renderOptions(updated)
-        if (reconnect) activateMode()
+    private fun saveOptions(updated: ConnectionOptions, onSaved: (Boolean) -> Unit) {
+        val recovering = configurationError
+        connection.updateOptions(updated, options) { saved ->
+            if (isDestroyed) return@updateOptions
+            if (saved) {
+                configurationError = false
+                options = updated
+                connectionSettings.renderOptions(updated)
+                if (recovering) activateMode()
+            } else Toast.makeText(this, R.string.settings_save_failed, Toast.LENGTH_LONG).show()
+            onSaved(saved)
+        }
     }
 
     @Suppress("DEPRECATION")

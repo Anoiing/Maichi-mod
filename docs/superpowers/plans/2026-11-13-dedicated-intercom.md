@@ -8,7 +8,7 @@
 
 **Tech Stack:** 原生 Kotlin、Android View/XML、JDK 17、minSdk 26、compileSdk/targetSdk 36、现有 JUnit 4.13.2；AndroidX Test 只用于设备测试，人脸阶段才引入 CameraX/本地 ML Kit。
 
-**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。状态：开发前草案；以下任务尚未执行。
+**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。状态：开发中；各阶段的本地验证、模拟器验证与现场验收分别记录。
 
 **Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。当前仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，也尚无 androidTest 目录。本轮以 JDK 17 离线强制重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；没有在本轮安装或进行真实门机操作。
 
@@ -68,7 +68,7 @@ UserInteractionService：可选的全局闲置检测与返回，独立授权
 
 不引入通用 Runtime/Command 总线、独立 Recovery/Startup/Readiness Policy、独立诊断页或历史日志数据库。已有两个真实传输实现需要的 DatagramTransport、会话时钟和取消接口保留。文件数量不是硬性指标；如实际实现需要拆分，必须指出新增文件集中管理了什么真实职责、移除了哪些复杂度。
 
-AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`openMonitor(source)`、`closeMonitor()`、`callElevator()`、`answerCall(key)`、`hangUpCall(key)`、`unlockCall(key, autoHangUp, onResult)`。新增 `observe(observer): Cancellation` 复用已有取消接口，订阅立即获得当前状态；回调在主线程，解绑后不持有 View/Activity。新增 `updateOptions(updated: ConnectionOptions, onSaved: (Boolean) -> Unit)` 在同一所有者内核对活动来电、保存并按需重连，不再由 MainActivity 先保存再盲目重启。
+AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`openMonitor(source)`、`closeMonitor()`、`callElevator()`、`answerCall(key)`、`hangUpCall(key)`、`unlockCall(key, autoHangUp, onResult)`。新增 `observe(observer): Cancellation` 复用已有取消接口，订阅立即获得当前状态；回调在主线程，解绑后不持有 View/Activity。新增 `updateOptions(updated: ConnectionOptions, expected: ConnectionOptions = currentState.options, onSaved: (Boolean) -> Unit)` 在同一所有者内核对活动来电、保存并按需重连，不再由 MainActivity 先保存再盲目重启。
 
 `CallKey(runId: String, sequence: Int)` 用于跨进程和来电校验，沿用现有代次机制；`UnlockResult` 只有 `SENT / REJECTED / UNCONFIRMED` 三种结果。`IntercomState` 复用既有 LinkStatus、TerminalState、CallStatus，补充当前已生效 ConnectionOptions、CallKey、录音/播放健康、画面停顿、必要权限和最近故障；主状态直接推导。当前页面、settings_section、settings_dialog 和主题仍属于界面。自动返回只持有所需的前台/操作时间投影，不拥有另一份门禁状态。
 
@@ -83,11 +83,11 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** Consumes 现有连接/会话及 ConnectionOptions；Produces 上述控制器具体方法、订阅和状态；`AppSettings.load(): ConnectionOptions`、`save(options): Boolean`、`isReceptionEnabled(): Boolean`、`setReceptionEnabled(enabled): Boolean`。内部明确区分 Missing/Invalid 与有效配置，不能把读错误包装成一份空默认值。
 
-- [ ] **Step 1: 固定基线并写失败用例。** 从已提交的最新基线记录状态，不再假设来电基础仍未提交。新增 `observerReceivesCurrentStateAndCanDetach`、`settingsMigrationPreservesAllOptions`、`failedSaveDoesNotActivateNewIdentity`、`saveFailureKeepsDialogDraft`、`appearancePreferencesAreNotMigrated`、`lockedReadDoesNotAccessCredentialStorage`；断言既有字段/开关不变、失败不换身份/关弹窗、appearance 文件不变。验收模板列出 A/N/C/M/O/S/R 全部场景；现有已覆盖的报文/计时行为直接复用测试。
-- [ ] **Step 2: 验证失败。** 使用现有 `:app:testDebugUnitTest`；需要设备用例时仅增加 AndroidX Test core/runner `1.7.0`、ext.junit `1.3.0` 和 AndroidJUnitRunner，运行新用例确认因行为尚未存在失败。设备测试使用隔离的偏好存储和假传输，不覆盖真实参数。
-- [ ] **Step 3: 在原代码上完成迁移。** 保留 AppConnection，在原处建立状态订阅，替换对单一 Activity 的构造绑定。AppSettings 仅迁移门禁运行参数；Appearance.current/save 和 appearance 文件保持独立。ConnectionSettingsView 的 onSave 改为接受保存完成回调，保存成功才关闭字段/模式弹窗，失败保留草稿，开关回滚。ConnectionOptions 保留数据和校验，删除其旧存储调用，同一提交迁移调用方；updateOptions 串行核对来电与配置，保存失败不激活新值。
-- [ ] **Step 4: 回归。** 运行 `./gradlew -PmaichiFixtureDir=.maichi-fixtures :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`，在隔离模拟器运行对应设备测试。现有监控、呼梯、来电和设置回放保持；没有样本时如实记录跳过。只读核对平板 API、网口地址、供电和锁屏状态，不自动更改系统设置。
-- [ ] **Step 5: 清理并提交。** 确认只有一份 AppConnection、一份门禁权威配置，旧页面私有参数读写已移除，外观逻辑未被错误合并；建议 `refactor: centralize intercom state and configuration`。
+- [x] **Step 1: 固定基线并写失败用例。** 从已提交的最新基线记录状态，不再假设来电基础仍未提交。新增 `observerReceivesCurrentStateAndCanDetach`、`settingsMigrationPreservesAllOptions`、`failedSaveDoesNotActivateNewIdentity`、`saveFailureKeepsDialogDraft`、`appearancePreferencesAreNotMigrated`、`lockedReadDoesNotAccessCredentialStorage`；断言既有字段/开关不变、失败不换身份/关弹窗、appearance 文件不变。验收模板列出 A/N/C/M/O/S/R 全部场景；现有已覆盖的报文/计时行为直接复用测试。
+- [x] **Step 2: 验证失败。** 使用现有 `:app:testDebugUnitTest`；需要设备用例时仅增加 AndroidX Test core/runner `1.7.0`、ext.junit `1.3.0` 和 AndroidJUnitRunner，运行新用例确认因行为尚未存在失败。设备测试使用隔离的偏好存储和假传输，不覆盖真实参数。
+- [x] **Step 3: 在原代码上完成迁移。** 保留 AppConnection，在原处建立状态订阅，替换对单一 Activity 的构造绑定。AppSettings 仅迁移门禁运行参数；Appearance.current/save 和 appearance 文件保持独立。ConnectionSettingsView 的 onSave 改为接受保存完成回调，保存成功才关闭字段/模式弹窗，失败保留草稿，开关回滚。ConnectionOptions 保留数据和校验，删除其旧存储调用，同一提交迁移调用方；updateOptions 串行核对来电与配置，保存失败不激活新值。
+- [x] **Step 4: 回归。** 运行 `./gradlew -PmaichiFixtureDir=.maichi-fixtures :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`，在隔离模拟器运行对应设备测试。现有监控、呼梯、来电和设置回放保持；没有样本时如实记录跳过。只读核对平板 API、网口地址、供电和锁屏状态，不自动更改系统设置。
+- [x] **Step 5: 清理并提交。** 确认只有一份 AppConnection、一份门禁权威配置，旧页面私有参数读写已移除，外观逻辑未被错误合并；建议 `refactor: centralize intercom state and configuration`。
 
 ## Task 2: P1 Service 承载接待并迁出声音
 

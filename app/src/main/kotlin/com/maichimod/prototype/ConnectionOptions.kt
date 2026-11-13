@@ -1,6 +1,5 @@
 package com.maichimod.prototype
 
-import android.content.SharedPreferences
 import com.maichimod.prototype.protocol.TerminalProfile
 import com.maichimod.prototype.protocol.ipv4Address
 import com.maichimod.prototype.protocol.isTerminalId
@@ -114,28 +113,7 @@ internal data class ConnectionOptions(
             simulateTimeout != previous.simulateTimeout
         }
 
-    fun save(preferences: SharedPreferences) {
-        val editor = preferences.edit()
-            .putBoolean("wired", wired)
-            .putBoolean("simulateTimeout", simulateTimeout)
-            .putBoolean("autoHangUpAfterUnlock", autoHangUpAfterUnlock)
-        for (field in ConnectionField.entries) editor.putString(field.key, this[field])
-        editor.apply()
-    }
 
-    companion object {
-        fun load(preferences: SharedPreferences, defaultWired: Boolean): ConnectionOptions = ConnectionOptions(
-            wired = preferences.getBoolean("wired", defaultWired),
-            simulateTimeout = preferences.getBoolean("simulateTimeout", false),
-            autoHangUpAfterUnlock = preferences.getBoolean("autoHangUpAfterUnlock", true),
-            values = buildMap {
-                for (field in ConnectionField.entries) {
-                    val value = field.normalize(preferences.getString(field.key, "").orEmpty())
-                    if (!value.isNullOrEmpty()) put(field, value)
-                }
-            },
-        )
-    }
 }
 
 private fun terminalId(input: String, prefix: Char): String? {

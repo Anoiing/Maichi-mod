@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_read_failed">门禁配置读取失败，请检查配置后重新启用接待。</string>
+    <string name="settings_save_failed">未能保存，通话中请稍后修改连接参数。输入内容已保留。</string>
   <string name="close_dialog">关闭</string>
   <string name="unit_door_call">单元门来电</string>
   <string name="answer_call">接听</string>

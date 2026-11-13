@@ -32,6 +32,9 @@ import com.maichimod.prototype.transport.WiredLink
 import java.io.Closeable
 import java.io.IOException
 import java.net.Inet4Address
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -40,20 +43,70 @@ internal enum class LinkStatus {
     WIRED_CONNECTED, WIRED_RECONNECTING, WIRED_ERROR
 }
 
-internal class AppConnection @JvmOverloads constructor(
+internal data class CallKey(val runId: String, val sequence: Int)
+
+internal enum class UnlockResult { SENT, REJECTED, UNCONFIRMED }
+
+internal data class IntercomState(
+    val options: ConnectionOptions = ConnectionOptions(),
+    val enabled: Boolean = true,
+    val link: LinkStatus? = null,
+    val ethernet: WiredLink? = null,
+    val terminal: TerminalState = TerminalState(),
+    val call: CallStatus = CallStatus.IDLE,
+    val callKey: CallKey? = null,
+    val issue: String? = null,
+) {
+    val ready: Boolean get() = enabled && (link == LinkStatus.WIRED_CONNECTED || link == LinkStatus.SAMPLE)
+    val inCall: Boolean get() = call == CallStatus.RINGING || call == CallStatus.ANSWERED
+    val canMonitor: Boolean get() = ready && !inCall
+    val canCallElevator: Boolean get() = ready && terminal.elevator != ElevatorStatus.DISCOVERING && terminal.elevator != ElevatorStatus.WAITING
+}
+
+internal interface IntercomObserver {
+    fun onState(state: IntercomState)
+    fun onMonitorFrame(frame: Bitmap) {}
+    fun onCallFrame(frame: Bitmap) {}
+    fun onCallAudio(pcm: ByteArray) {}
+}
+
+internal class AppConnection(
     context: Context,
-    private val onLink: (LinkStatus, WiredLink?) -> Unit,
-    private val onState: (TerminalState) -> Unit,
-    private val onFrame: (Bitmap) -> Unit,
     private val openEthernet: (WiredLink, (ReceivedDatagram) -> Unit, (IOException) -> Unit) -> DatagramTransport =
         ::EthernetTransport,
-    private val onCall: (CallStatus, Int) -> Unit = { _, _ -> },
-    private val onCallFrame: (Bitmap) -> Unit = {},
-    private val onCallAudio: (ByteArray) -> Unit = {},
+    private val openLinks: (Context, Handler, Inet4Address?, (WiredLink?) -> Unit) -> Closeable = ::EthernetLinks,
 ) : Closeable {
     private data class PendingFrame(val token: Int, val socketToken: Int, val monitorToken: Int, val bitmap: Bitmap)
 
     private val app = context.applicationContext
+    private val settings = AppSettings(app)
+    private val runId = UUID.randomUUID().toString()
+    private val observers = CopyOnWriteArraySet<IntercomObserver>()
+    private val closed = AtomicBoolean()
+    @Volatile var currentState = IntercomState()
+        private set
+    private var running = false
+
+    fun observe(observer: IntercomObserver): Cancellation {
+        observers.add(observer)
+        if (Looper.myLooper() == Looper.getMainLooper()) observer.onState(currentState)
+        else main.post { if (observer in observers) observer.onState(currentState) }
+        return Cancellation { observers.remove(observer) }
+    }
+
+    private fun updateState(updated: IntercomState) {
+        currentState = updated
+        observers.forEach { if (it in observers) it.onState(updated) }
+    }
+    private fun onLink(status: LinkStatus, link: WiredLink?) =
+        updateState(currentState.copy(options = activeOptions, enabled = true, link = status, ethernet = link))
+    private fun onState(state: TerminalState) = updateState(currentState.copy(terminal = state))
+    private fun onCall(status: CallStatus, token: Int) =
+        updateState(currentState.copy(call = status, callKey = CallKey(runId, token)))
+    private fun onFrame(frame: Bitmap) { observers.forEach { it.onMonitorFrame(frame) } }
+    private fun onCallFrame(frame: Bitmap) { observers.forEach { it.onCallFrame(frame) } }
+    private fun onCallAudio(pcm: ByteArray) { observers.forEach { it.onCallAudio(pcm) } }
+
     private val thread = HandlerThread("Maichi-session").apply { start() }
     private val worker = Handler(thread.looper)
     private val main = Handler(Looper.getMainLooper())
@@ -78,7 +131,7 @@ internal class AppConnection @JvmOverloads constructor(
         }
     }
 
-    private var links: EthernetLinks? = null
+    private var links: Closeable? = null
     private var session: TerminalSession<Bitmap>? = null
     private var calls: IncomingCallSession<Bitmap>? = null
     private var wiredRetry: Cancellation? = null
@@ -89,13 +142,53 @@ internal class AppConnection @JvmOverloads constructor(
     private var monitorSamples = emptyMap<MonitorSource, List<CaptureRow>>()
 
     fun start(options: ConnectionOptions) {
-        val token = generation.incrementAndGet()
         worker.post {
-            release()
-            if (token != generation.get()) return@post
-            activeOptions = options
-            if (options.wired) startWired(options, token) else startReplay(options, token)
+            if (closed.get()) return@post
+            if (running && activeOptions == options) return@post
+            restart(options)
         }
+    }
+
+    fun retry() {
+        worker.post {
+            if (!closed.get() && running && calls?.status != CallStatus.RINGING && calls?.status != CallStatus.ANSWERED) {
+                restart(activeOptions)
+            }
+        }
+    }
+
+    private fun restart(options: ConnectionOptions) {
+        val token = generation.incrementAndGet()
+        release()
+        running = true
+        activeOptions = options
+        val socketToken = socketGeneration.get()
+        publish(token, socketToken) { updateState(IntercomState(options = options)) }
+        if (options.wired) startWired(options, token) else startReplay(options, token)
+    }
+
+    fun updateOptions(updated: ConnectionOptions, expected: ConnectionOptions = currentState.options, onSaved: (Boolean) -> Unit) {
+        val queued = worker.post {
+            if (closed.get()) {
+                main.post { onSaved(false) }
+                return@post
+            }
+            val reconnect = updated.requiresReconnect(activeOptions)
+            val inCall = calls?.status == CallStatus.RINGING || calls?.status == CallStatus.ANSWERED
+            val saved = synchronized(closed) {
+                !closed.get() && expected == activeOptions && !(inCall && reconnect) && settings.save(updated)
+            }
+            if (saved) {
+                activeOptions = updated
+                if (running && reconnect) restart(updated)
+                else {
+                    val token = generation.get(); val socketToken = socketGeneration.get()
+                    publish(token, socketToken) { updateState(currentState.copy(options = updated)) }
+                }
+            }
+            main.post { onSaved(saved) }
+        }
+        if (!queued) main.post { onSaved(false) }
     }
 
     @JvmOverloads
@@ -146,11 +239,18 @@ internal class AppConnection @JvmOverloads constructor(
         monitorGeneration.incrementAndGet()
         pendingFrame.set(null)
         main.removeCallbacks(render)
-        worker.post { release() }
+        worker.post {
+            release()
+            running = false
+            main.post { updateState(currentState.copy(enabled = false, link = null, ethernet = null,
+                terminal = TerminalState(), call = CallStatus.IDLE, callKey = null)) }
+        }
     }
 
     override fun close() {
+        if (!synchronized(closed) { closed.compareAndSet(false, true) }) return
         stop()
+        observers.clear()
         thread.quitSafely()
     }
 
@@ -199,7 +299,7 @@ internal class AppConnection @JvmOverloads constructor(
             onLink(if (options.hasTerminalIds) LinkStatus.WIRED_WAITING else LinkStatus.WIRED_NEEDS_IDS, null)
         }
         try {
-            links = EthernetLinks(app, worker, options.preferredLocalIp) { link ->
+            links = openLinks(app, worker, options.preferredLocalIp) { link ->
                 if (token == generation.get()) selectWiredLink(options, token, link)
             }
         } catch (failure: RuntimeException) {

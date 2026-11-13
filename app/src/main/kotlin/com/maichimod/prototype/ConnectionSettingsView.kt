@@ -30,7 +30,7 @@ import com.maichimod.prototype.transport.WiredLink
 internal class ConnectionSettingsView(
     page: View,
     private val currentOptions: () -> ConnectionOptions,
-    private val onSave: (ConnectionOptions) -> Unit,
+    private val onSave: (ConnectionOptions, (Boolean) -> Unit) -> Unit,
     onRetry: () -> Unit,
     private val onThemeSelected: (ThemeColor) -> Unit = {},
     private val onSimulateCall: () -> Unit = {},
@@ -99,7 +99,13 @@ internal class ConnectionSettingsView(
         retryEthernet.setOnClickListener { onRetry() }
         autoHangUp.setOnCheckedChangeListener { _, checked ->
             val options = currentOptions()
-            if (checked != options.autoHangUpAfterUnlock) onSave(options.copy(autoHangUpAfterUnlock = checked))
+            if (checked != options.autoHangUpAfterUnlock) {
+                autoHangUp.isEnabled = false
+                onSave(options.copy(autoHangUpAfterUnlock = checked)) {
+                    autoHangUp.isEnabled = true
+                    autoHangUp.isChecked = currentOptions().autoHangUpAfterUnlock
+                }
+            }
         }
     }
 
@@ -213,12 +219,19 @@ internal class ConnectionSettingsView(
             save.setOnClickListener {
                 val updated = currentOptions().withField(field, input.text.toString())
                 if (updated == null) {
+                    error.setText(field.error)
                     error.visibility = View.VISIBLE
                     input.isSelected = true
                     return@setOnClickListener
                 }
-                onSave(updated)
-                editor.dismiss()
+                save.isEnabled = false
+                onSave(updated) { saved ->
+                    save.isEnabled = true
+                    if (saved) editor.dismiss() else {
+                        error.setText(R.string.settings_save_failed)
+                        error.visibility = View.VISIBLE
+                    }
+                }
             }
             input.setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_DONE) save.performClick() else false
@@ -261,13 +274,21 @@ internal class ConnectionSettingsView(
             .setTitle(R.string.connection_mode)
             .setView(content)
             .setNegativeButton(R.string.cancel_setting, null)
-            .setPositiveButton(R.string.save_setting) { _, _ ->
+            .setPositiveButton(R.string.save_setting, null)
+            .create()
+        picker.setOnShowListener {
+            val save = picker.getButton(AlertDialog.BUTTON_POSITIVE)
+            save.setOnClickListener {
+                save.isEnabled = false
                 onSave(currentOptions().copy(
                     wired = modes.checkedRadioButtonId == R.id.option_wired,
                     simulateTimeout = simulateTimeout.isChecked,
-                ))
+                )) { saved ->
+                    save.isEnabled = true
+                    if (saved) picker.dismiss()
+                }
             }
-            .create()
+        }
         simulateCall.setOnClickListener { picker.dismiss(); onSimulateCall() }
         showDialog(picker)
     }

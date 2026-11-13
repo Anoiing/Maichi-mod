@@ -18,6 +18,9 @@ import com.maichimod.prototype.session.SessionScheduler
 import com.maichimod.prototype.session.TerminalObserver
 import com.maichimod.prototype.session.TerminalSession
 import com.maichimod.prototype.session.TerminalState
+import com.maichimod.prototype.session.CallObserver
+import com.maichimod.prototype.session.CallStatus
+import com.maichimod.prototype.session.IncomingCallSession
 import com.maichimod.prototype.transport.CaptureFixtures
 import com.maichimod.prototype.transport.CaptureRow
 import com.maichimod.prototype.transport.DatagramTransport
@@ -37,15 +40,18 @@ internal enum class LinkStatus {
     WIRED_CONNECTED, WIRED_RECONNECTING, WIRED_ERROR
 }
 
-internal class AppConnection(
+internal class AppConnection @JvmOverloads constructor(
     context: Context,
     private val onLink: (LinkStatus, WiredLink?) -> Unit,
     private val onState: (TerminalState) -> Unit,
     private val onFrame: (Bitmap) -> Unit,
     private val openEthernet: (WiredLink, (ReceivedDatagram) -> Unit, (IOException) -> Unit) -> DatagramTransport =
         ::EthernetTransport,
+    private val onCall: (CallStatus, Int) -> Unit = { _, _ -> },
+    private val onCallFrame: (Bitmap) -> Unit = {},
+    private val onCallAudio: (ByteArray) -> Unit = {},
 ) : Closeable {
-    private data class PendingFrame(val token: Int, val socketToken: Int, val bitmap: Bitmap)
+    private data class PendingFrame(val token: Int, val socketToken: Int, val monitorToken: Int, val bitmap: Bitmap)
 
     private val app = context.applicationContext
     private val thread = HandlerThread("Maichi-session").apply { start() }
@@ -53,10 +59,13 @@ internal class AppConnection(
     private val main = Handler(Looper.getMainLooper())
     private val generation = AtomicInteger()
     private val socketGeneration = AtomicInteger()
+    private val monitorGeneration = AtomicInteger()
+    private val callGeneration = AtomicInteger()
+    val callToken: Int get() = callGeneration.get()
     private val pendingFrame = AtomicReference<PendingFrame?>()
     private val render = Runnable {
-        pendingFrame.getAndSet(null)?.let { (token, socketToken, bitmap) ->
-            if (isCurrent(token, socketToken)) onFrame(bitmap)
+        pendingFrame.getAndSet(null)?.let { (token, socketToken, monitorToken, bitmap) ->
+            if (isCurrent(token, socketToken) && monitorToken == monitorGeneration.get()) onFrame(bitmap)
         }
     }
     private val scheduler = object : SessionScheduler {
@@ -71,23 +80,70 @@ internal class AppConnection(
 
     private var links: EthernetLinks? = null
     private var session: TerminalSession<Bitmap>? = null
+    private var calls: IncomingCallSession<Bitmap>? = null
     private var wiredRetry: Cancellation? = null
+    private var activeMonitorToken = 0
+    private var activeOptions = ConnectionOptions()
+    private var activeLink: WiredLink? = null
+    private var replayTransport: FixtureTransport? = null
+    private var monitorSamples = emptyMap<MonitorSource, List<CaptureRow>>()
 
     fun start(options: ConnectionOptions) {
         val token = generation.incrementAndGet()
         worker.post {
             release()
             if (token != generation.get()) return@post
+            activeOptions = options
             if (options.wired) startWired(options, token) else startReplay(options, token)
         }
     }
 
-    fun openMonitor() = withSession { openMonitor() }
-    fun closeMonitor() = withSession { closeMonitor() }
+    @JvmOverloads
+    fun openMonitor(source: MonitorSource = MonitorSource.UNIT) {
+        val monitorToken = monitorGeneration.incrementAndGet()
+        withSession {
+            if (calls?.status == CallStatus.RINGING || calls?.status == CallStatus.ANSWERED) return@withSession
+            activeMonitorToken = monitorToken
+            if (activeOptions.wired) {
+                val link = activeLink ?: return@withSession
+                if (!activeOptions.hasMonitorIds(source)) return@withSession
+                openMonitor(activeOptions.terminalProfile(link.address, link.prefixLength, source))
+            } else {
+                replayTransport?.selectMonitor(monitorSamples[source].orEmpty())
+                openMonitor()
+            }
+        }
+    }
+
+    fun closeMonitor() {
+        monitorGeneration.incrementAndGet()
+        withSession { closeMonitor() }
+    }
     fun callElevator() = withSession { callElevator() }
+
+    fun answerCall(callToken: Int) = withCall(callToken) { answer() }
+    fun hangUpCall(callToken: Int) {
+        if (!callGeneration.compareAndSet(callToken, callToken + 1)) return
+        withCall(callToken + 1) { hangUp() }
+    }
+    fun unlockCall(callToken: Int, autoHangUp: Boolean, onSent: (Boolean) -> Unit) = withCall(callToken) {
+        val sent = unlock(autoHangUp)
+        val token = generation.get(); val socketToken = socketGeneration.get()
+        publish(token, socketToken) { if (callToken == callGeneration.get()) onSent(sent) }
+    }
+    fun sendCallAudio(pcm: ByteArray, callToken: Int) = withCall(callToken) { sendAudio(pcm) }
+    fun simulateIncoming() { worker.post { replayTransport?.simulateIncoming() } }
+
+    private fun withCall(callToken: Int = callGeneration.get(), action: IncomingCallSession<Bitmap>.() -> Unit) {
+        val token = generation.get(); val socketToken = socketGeneration.get()
+        worker.post {
+            if (isCurrent(token, socketToken) && callToken == callGeneration.get()) calls?.action()
+        }
+    }
 
     fun stop() {
         generation.incrementAndGet()
+        monitorGeneration.incrementAndGet()
         pendingFrame.set(null)
         main.removeCallbacks(render)
         worker.post { release() }
@@ -105,17 +161,20 @@ internal class AppConnection(
     }
 
     private fun startReplay(options: ConnectionOptions, token: Int) {
-        val monitor = readSample(CaptureFixtures.MONITOR_RX)
+        monitorSamples = MonitorSource.entries.associateWith { readSample(it.fixture) }
+        val monitor = monitorSamples[MonitorSource.UNIT].orEmpty()
         val elevatorReply = if (options.simulateTimeout) null else readSample(CaptureFixtures.ELEVATOR_RX)
             .firstOrNull { it.incoming && it.localPort == MaichiPackets.SESSION_PORT }
         val socketToken = socketGeneration.get()
         if (!isCurrent(token, socketToken)) return
-        val transport = FixtureTransport(scheduler, monitor, elevatorReply) {
+        val transport = FixtureTransport(scheduler, monitor, elevatorReply, readSample(CaptureFixtures.CALL_RX)) {
             if (isCurrent(token, socketToken)) receive(it)
         }
+        replayTransport = transport
         installSession(DEMO_PROFILE, transport, token, socketToken)
         Log.i(TAG, "Offline replay monitor_datagrams=${monitor.size} elevator_reply=${elevatorReply != null}")
         publish(token, socketToken) {
+            onCall(CallStatus.IDLE, callGeneration.get())
             onLink(if (monitor.isEmpty()) LinkStatus.SAMPLE_MISSING else LinkStatus.SAMPLE, null)
         }
     }
@@ -151,6 +210,7 @@ internal class AppConnection(
 
     private fun selectWiredLink(options: ConnectionOptions, token: Int, link: WiredLink?) {
         val socketToken = retireSession()
+        activeLink = link
         when {
             !options.hasTerminalIds -> publishWiredStatus(token, socketToken, LinkStatus.WIRED_NEEDS_IDS, link)
             link == null -> publishWiredStatus(token, socketToken, LinkStatus.WIRED_WAITING, null)
@@ -233,7 +293,10 @@ internal class AppConnection(
                     onOperational()
                 }
                 Log.i(TAG, "monitor=${state.monitor} elevator=${state.elevator}")
-                publish(token, socketToken) { onState(state) }
+                val monitorToken = activeMonitorToken
+                publish(token, socketToken) {
+                    onState(if (monitorToken == monitorGeneration.get()) state else state.copy(monitor = MonitorStatus.IDLE))
+                }
             }
 
             override fun decodeJpeg(jpeg: ByteArray): Bitmap? {
@@ -242,7 +305,7 @@ internal class AppConnection(
             }
 
             override fun onFrame(frame: Bitmap) {
-                pendingFrame.set(PendingFrame(token, socketToken, frame))
+                pendingFrame.set(PendingFrame(token, socketToken, activeMonitorToken, frame))
                 main.removeCallbacks(render)
                 main.post(render)
             }
@@ -260,11 +323,32 @@ internal class AppConnection(
                 scheduler.schedule(delayMs) { if (isCurrent(token, socketToken)) action() }
         }
         session = TerminalSession(profile, logged, sessionScheduler, observer)
+        calls = IncomingCallSession(profile, logged, sessionScheduler, object : CallObserver<Bitmap> {
+            override fun onStateChanged(status: CallStatus) {
+                if (status == CallStatus.RINGING || status == CallStatus.ENDED ||
+                    status == CallStatus.DISCONNECTED || status == CallStatus.TIMED_OUT
+                ) callGeneration.incrementAndGet()
+                if (status == CallStatus.RINGING) session?.closeMonitor()
+                val callToken = callGeneration.get()
+                publish(token, socketToken) { if (callToken == callGeneration.get()) onCall(status, callToken) }
+            }
+            override fun decodeJpeg(jpeg: ByteArray): Bitmap? = observer.decodeJpeg(jpeg)
+            override fun onFrame(frame: Bitmap) {
+                val callToken = callGeneration.get()
+                publish(token, socketToken) { if (callToken == callGeneration.get()) onCallFrame(frame) }
+            }
+            override fun onAudio(pcm: ByteArray) {
+                val callToken = callGeneration.get()
+                publish(token, socketToken) { if (callToken == callGeneration.get()) onCallAudio(pcm) }
+            }
+            override fun onTransportFailure(failure: Exception) = handleTransportFailure(failure)
+        })
     }
 
     private fun receive(datagram: ReceivedDatagram) {
         logDatagram("RX", datagram.localPort, datagram.payload)
         session?.receive(datagram)
+        calls?.receive(datagram)
     }
 
     private fun isCurrent(token: Int, socketToken: Int): Boolean =
@@ -277,6 +361,7 @@ internal class AppConnection(
     private fun publishWiredStatus(token: Int, socketToken: Int, status: LinkStatus, link: WiredLink?) {
         publish(token, socketToken) {
             onState(TerminalState())
+            onCall(CallStatus.IDLE, callGeneration.get())
             onLink(status, link)
         }
     }
@@ -285,14 +370,20 @@ internal class AppConnection(
         links?.close()
         links = null
         retireSession(closeMonitor = true)
+        activeLink = null
+        replayTransport = null
+        monitorSamples = emptyMap()
     }
 
     private fun retireSession(closeMonitor: Boolean = false): Int {
         val socketToken = socketGeneration.incrementAndGet()
+        callGeneration.incrementAndGet()
         wiredRetry?.cancel()
         wiredRetry = null
         pendingFrame.set(null)
         main.removeCallbacks(render)
+        if (closeMonitor) calls?.close() else calls?.disconnect()
+        calls = null
         if (closeMonitor) session?.close() else session?.disconnect()
         session = null
         return socketToken

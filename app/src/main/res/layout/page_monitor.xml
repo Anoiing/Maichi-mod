@@ -5,19 +5,19 @@
     android:visibility="gone">
 
     <FrameLayout style="@style/Widget.Maichi.PageHeader">
-        <Button
+        <com.maichimod.prototype.MedioraButton
             android:id="@+id/monitor_back"
             style="@style/Widget.Maichi.PageBack"
-            android:text="@string/monitor" />
+            android:contentDescription="@string/monitor" />
 
         <TextView
+            android:id="@+id/monitor_title"
             style="@style/Widget.Maichi.PageTitle"
             android:text="@string/unit_door_station" />
 
-        <TextView
+        <ImageView
             android:id="@+id/monitor_state"
-            style="@style/Widget.Maichi.Status"
-            android:accessibilityLiveRegion="polite" />
+            style="@style/Widget.Maichi.NetworkStatus" android:contentDescription="@string/network_status" />
     </FrameLayout>
 
     <FrameLayout
@@ -26,14 +26,13 @@
         android:layout_height="0dp"
         android:layout_marginTop="@dimen/tile_gap"
         android:layout_weight="1"
-        android:background="@drawable/settings_panel"
-        android:padding="1dp">
+        android:background="@drawable/video_surface">
 
         <ImageView
             android:id="@+id/preview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@color/black"
+            android:background="@drawable/video_surface"
             android:contentDescription="@string/unit_camera_preview"
             android:scaleType="fitCenter" />
 
@@ -48,9 +47,10 @@
             <TextView
                 android:id="@+id/monitor_message"
                 style="@style/Widget.Maichi.SectionTitle"
+                android:textColor="@color/video_text"
                 android:accessibilityLiveRegion="polite" />
 
-            <Button
+            <com.maichimod.prototype.MedioraButton
                 android:id="@+id/retry_monitor"
                 style="@style/Widget.Maichi.PrimaryButton"
                 android:layout_marginTop="14dp"

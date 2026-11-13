@@ -2,6 +2,11 @@ package com.maichimod.prototype
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.pm.PackageManager
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.content.res.ColorStateList
 import android.media.AudioManager
 import android.os.Build
@@ -9,11 +14,15 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
+import android.widget.Button
+import com.maichimod.prototype.session.CallStatus
 import com.maichimod.prototype.session.ElevatorStatus
 import com.maichimod.prototype.session.MonitorStatus
 import com.maichimod.prototype.session.TerminalState
@@ -25,13 +34,22 @@ class MainActivity : Activity() {
     private lateinit var monitorSources: View
     private lateinit var monitorPage: View
     private lateinit var settingsPage: View
-    private lateinit var unitMonitor: View
+    private lateinit var callPage: View
+    private lateinit var callPreview: ImageView
+    private lateinit var callAudio: CallAudio
+    private var callStatus = CallStatus.IDLE
+    private var displayedCallToken = 0
+    private var callReturnPage: View? = null
+    private var callSettingsDraft: Bundle? = null
+    private var ringtone: Ringtone? = null
+    private var microphoneRequestCall: Int? = null
+    private lateinit var sourceTiles: Map<MonitorSource, View>
     private lateinit var elevatorTile: View
     private lateinit var preview: ImageView
-    private lateinit var connectionState: TextView
-    private lateinit var sourcesState: TextView
+    private lateinit var connectionState: ImageView
+    private lateinit var sourcesState: ImageView
     private lateinit var elevatorState: TextView
-    private lateinit var monitorState: TextView
+    private lateinit var monitorState: ImageView
     private lateinit var monitorMessage: TextView
     private lateinit var monitorOverlay: View
     private lateinit var retry: View
@@ -42,9 +60,11 @@ class MainActivity : Activity() {
     private var link: LinkStatus? = null
     private var wiredLink: WiredLink? = null
     private var state = TerminalState()
+    private var selectedSource = MonitorSource.UNIT
     private var unregisterBack: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Appearance.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         applyInsets()
@@ -52,14 +72,31 @@ class MainActivity : Activity() {
         monitorSources = findViewById(R.id.monitor_sources)
         monitorPage = findViewById(R.id.monitor_page)
         settingsPage = findViewById(R.id.settings_page)
-        unitMonitor = findViewById(R.id.unit_monitor)
+        callPage = findViewById(R.id.call_page)
+        callPreview = findViewById(R.id.call_preview)
+        callAudio = CallAudio(this) { runOnUiThread {
+            if (callStatus == CallStatus.ANSWERED) Toast.makeText(this, R.string.call_audio_unavailable, Toast.LENGTH_LONG).show()
+        } }
+        sourceTiles = MonitorSource.entries.associateWith { findViewById(it.tile) }
+        selectedSource = MonitorSource.entries.firstOrNull {
+            it.name == savedInstanceState?.getString("monitor_source")
+        } ?: MonitorSource.UNIT
         elevatorTile = findViewById(R.id.elevator_tile)
+        val mijiaIcon = findViewById<ImageView>(R.id.mijia_icon)
+        try {
+            mijiaIcon.setImageDrawable(packageManager.getApplicationIcon("com.xiaomi.smarthome"))
+        } catch (_: PackageManager.NameNotFoundException) {
+            // 未安装时保留通用智能家居图标，点击入口提供安装提示。
+        }
         preview = findViewById(R.id.preview)
-        findViewById<View>(R.id.monitor_frame).clipToOutline = true
+        MedioraUi.applySurface(findViewById(R.id.monitor_frame), SurfaceRole.OUTLINE)
+        preview.clipToOutline = true
         connectionState = findViewById(R.id.connection_state)
         sourcesState = findViewById(R.id.sources_state)
         elevatorState = findViewById(R.id.elevator_state)
         monitorState = findViewById(R.id.monitor_state)
+        MedioraUi.applySurface(findViewById(R.id.call_video_frame), SurfaceRole.OUTLINE)
+        callPreview.clipToOutline = true
         monitorMessage = findViewById(R.id.monitor_message)
         monitorOverlay = findViewById(R.id.monitor_overlay)
         retry = findViewById(R.id.retry_monitor)
@@ -67,22 +104,56 @@ class MainActivity : Activity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
 
         options = ConnectionOptions.load(getPreferences(MODE_PRIVATE), defaultWired = !BuildConfig.DEBUG)
-        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, ::activateMode)
+        connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, ::activateMode, onThemeSelected = { theme ->
+            Appearance.save(this, theme)
+            recreate()
+        }) {
+            showPage(dashboard)
+            connection.simulateIncoming()
+        }
         connectionSettings.renderOptions(options)
-        connection = AppConnection(this, { status, ethernet ->
+        connectionSettings.restoreSection(savedInstanceState?.getInt("settings_section") ?: 0)
+        connection = AppConnection(this, onLink = { status, ethernet ->
             link = status
             wiredLink = ethernet
             renderState()
-        }, { updated ->
+        }, onState = { updated ->
             state = updated
+            if (state.monitor == MonitorStatus.ENDED && monitorPage.visibility == View.VISIBLE) {
+                showPage(monitorSources)
+            }
             renderState()
-        }, { bitmap ->
+        }, onFrame = { bitmap ->
             if (monitorPage.visibility == View.VISIBLE &&
                 (state.monitor == MonitorStatus.VIEWING || state.monitor == MonitorStatus.ENDED)
             ) preview.setImageBitmap(bitmap)
-        })
+        }, onCall = ::renderCall, onCallFrame = { bitmap ->
+            if (callPage.isShown && (callStatus == CallStatus.RINGING || callStatus == CallStatus.ANSWERED)) {
+                callPreview.setImageBitmap(bitmap)
+            }
+        }, onCallAudio = { pcm -> if (callStatus == CallStatus.ANSWERED) callAudio.enqueue(pcm) })
+        findViewById<View>(R.id.call_action).setOnClickListener {
+            when (callStatus) {
+                CallStatus.RINGING -> answerCall()
+                CallStatus.ANSWERED -> connection.hangUpCall(displayedCallToken)
+                else -> Unit
+            }
+        }
+        findViewById<View>(R.id.call_back).setOnClickListener { connection.hangUpCall(displayedCallToken) }
+        findViewById<View>(R.id.unlock_call).setOnClickListener { button ->
+            val token = displayedCallToken
+            button.isActivated = true
+            button.isEnabled = false
+            connection.unlockCall(token, options.autoHangUpAfterUnlock) { sent ->
+                if (sent) Toast.makeText(this, if (options.wired) R.string.unlock_sent else R.string.sample_unlock_sent, Toast.LENGTH_LONG).show()
+            }
+            button.postDelayed({
+                if (token == connection.callToken && callPage.isShown) { button.isActivated = false; button.isEnabled = true }
+            }, 1500)
+        }
         findViewById<View>(R.id.monitor_tile).setOnClickListener { showPage(monitorSources) }
-        unitMonitor.setOnClickListener { openMonitor() }
+        findViewById<View>(R.id.mijia_tile).setOnClickListener { openMijia() }
+        sourceTiles.forEach { (source, tile) -> tile.setOnClickListener { openMonitor(source) } }
         elevatorTile.setOnClickListener { connection.callElevator() }
         findViewById<View>(R.id.sources_back).setOnClickListener { showPage(dashboard) }
         findViewById<View>(R.id.monitor_back).setOnClickListener { showPage(monitorSources) }
@@ -92,7 +163,7 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.settings_button).setOnClickListener { showSettings() }
         findViewById<View>(R.id.settings_back).setOnClickListener { showPage(dashboard) }
         val restoredPage = savedInstanceState?.getInt("page", R.id.dashboard) ?: R.id.dashboard
-        showPage(findViewById(restoredPage))
+        showPage(listOf(dashboard, monitorSources, monitorPage, settingsPage).firstOrNull { it.id == restoredPage } ?: dashboard)
         connectionSettings.restoreDialogState(savedInstanceState?.getBundle("settings_dialog"))
     }
 
@@ -103,6 +174,8 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         if (monitorPage.visibility == View.VISIBLE) showPage(monitorSources)
+        callAudio.stop(); ringtone?.stop(); ringtone = null
+        if (callPage.isShown) { connection.hangUpCall(displayedCallToken); renderCall(CallStatus.ENDED) }
         connection.stop()
         super.onStop()
     }
@@ -122,14 +195,21 @@ class MainActivity : Activity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        val page = listOf(dashboard, monitorSources, monitorPage, settingsPage).first { it.visibility == View.VISIBLE }
-        outState.putInt("page", if (page === monitorPage) R.id.monitor_sources else page.id)
-        outState.putBundle("settings_dialog", connectionSettings.saveDialogState())
+        val page = listOf(dashboard, monitorSources, monitorPage, settingsPage, callPage).first { it.visibility == View.VISIBLE }
+        outState.putInt("page", when (page) {
+            monitorPage -> R.id.monitor_sources
+            callPage -> callReturnPage?.id ?: R.id.dashboard
+            else -> page.id
+        })
+        outState.putString("monitor_source", selectedSource.name)
+        outState.putBundle("settings_dialog", connectionSettings.saveDialogState() ?: callSettingsDraft)
+        outState.putInt("settings_section", connectionSettings.selectedSection())
         super.onSaveInstanceState(outState)
     }
 
     private fun navigateBack(): Boolean {
         when {
+            callPage.isShown -> connection.hangUpCall(displayedCallToken)
             monitorPage.isShown -> showPage(monitorSources)
             monitorSources.isShown || settingsPage.isShown -> showPage(dashboard)
             else -> return false
@@ -172,13 +252,14 @@ class MainActivity : Activity() {
         connection.start(options)
     }
 
-    private fun openMonitor() {
+    private fun openMonitor(source: MonitorSource = selectedSource) {
+        selectedSource = source
         showPage(monitorPage)
         preview.setImageDrawable(null)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (link == LinkStatus.SAMPLE || link == LinkStatus.WIRED_CONNECTED) {
             state = state.copy(monitor = MonitorStatus.DISCOVERING)
-            connection.openMonitor()
+            connection.openMonitor(source)
         }
         renderState()
     }
@@ -189,10 +270,99 @@ class MainActivity : Activity() {
             preview.setImageDrawable(null)
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        for (candidate in listOf(dashboard, monitorSources, monitorPage, settingsPage)) {
+        for (candidate in listOf(dashboard, monitorSources, monitorPage, settingsPage, callPage)) {
             candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
         }
         updateBackNavigation()
+    }
+
+    private fun renderCall(status: CallStatus, token: Int = displayedCallToken) {
+        val previous = callStatus
+        displayedCallToken = token
+        callStatus = status
+        when (status) {
+            CallStatus.RINGING -> {
+                ringtone?.stop(); ringtone = null
+                callAudio.stop()
+                if (!callPage.isShown) {
+                    callReturnPage = when {
+                        monitorPage.isShown -> monitorSources
+                        settingsPage.isShown -> settingsPage
+                        monitorSources.isShown -> monitorSources
+                        else -> dashboard
+                    }
+                    callSettingsDraft = connectionSettings.saveDialogState()
+                    connectionSettings.dismissDialog()
+                    callPreview.setImageDrawable(null)
+                    showPage(callPage)
+                }
+                findViewById<View>(R.id.unlock_call).apply { isActivated = false; isEnabled = true }
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                volumeControlStream = AudioManager.STREAM_VOICE_CALL
+                if (getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_NORMAL) {
+                    ringtone = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+                    ringtone?.play()
+                }
+            }
+            CallStatus.ANSWERED -> if (previous != status) {
+                ringtone?.stop(); ringtone = null
+                callAudio.start(options.wired && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    connection.sendCallAudio(it, token)
+                }
+            }
+            else -> {
+                ringtone?.stop(); ringtone = null; callAudio.stop()
+                callPreview.setImageDrawable(null)
+                volumeControlStream = AudioManager.STREAM_MUSIC
+                if (callPage.isShown) {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    showPage(callReturnPage ?: dashboard)
+                    connectionSettings.restoreDialogState(callSettingsDraft)
+                }
+                callSettingsDraft = null
+            }
+        }
+        findViewById<Button>(R.id.call_action).apply {
+            val answered = status == CallStatus.ANSWERED
+            setText(if (answered) R.string.hang_up_call else R.string.answer_call)
+            val role = if (answered) SurfaceRole.DESTRUCTIVE else SurfaceRole.PRIMARY
+            setTextColor(MedioraUi.buttonText(this@MainActivity, role))
+            compoundDrawableTintList = MedioraUi.buttonText(this@MainActivity, role)
+            setCompoundDrawablesWithIntrinsicBounds(0, if (answered) R.drawable.ic_end_call else R.drawable.ic_answer_call, 0, 0)
+            MedioraUi.applySurface(this, role, addGutter = false)
+            isActivated = status == CallStatus.RINGING && microphoneRequestCall != null
+            isEnabled = answered || (status == CallStatus.RINGING && microphoneRequestCall == null)
+        }
+        val label = getString(if (status == CallStatus.ANSWERED) R.string.call_answered else R.string.call_ringing)
+        findViewById<TextView>(R.id.call_state).text = if (options.wired) label else getString(R.string.call_sample, label)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun answerCall() {
+        if (callStatus != CallStatus.RINGING || microphoneRequestCall != null) return
+        if (options.wired && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            microphoneRequestCall = displayedCallToken
+            findViewById<View>(R.id.call_action).apply { isActivated = true; isEnabled = false }
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 21)
+        } else connection.answerCall(displayedCallToken)
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 21) return
+        val requestedCall = microphoneRequestCall
+        microphoneRequestCall = null
+        if (requestedCall != null && requestedCall == connection.callToken && requestedCall == displayedCallToken && callStatus == CallStatus.RINGING) {
+            connection.answerCall(requestedCall)
+            if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, R.string.call_microphone_denied, Toast.LENGTH_LONG).show()
+            }
+        }
+        findViewById<View>(R.id.call_action).apply {
+            isActivated = false
+            isEnabled = callStatus == CallStatus.RINGING || callStatus == CallStatus.ANSWERED
+        }
     }
 
     private fun renderState() {
@@ -212,20 +382,28 @@ class MainActivity : Activity() {
             }
         }
         val statusColor = when (link) {
-            LinkStatus.SAMPLE, LinkStatus.SAMPLE_MISSING -> R.color.amber
+            LinkStatus.SAMPLE, LinkStatus.SAMPLE_MISSING -> R.color.secondary_text
             LinkStatus.WIRED_CONNECTED -> R.color.status_ready
             LinkStatus.WIRED_ERROR, LinkStatus.WIRED_PROFILE_MISMATCH -> R.color.status_error
             else -> R.color.muted_text
         }
-        setStatus(connectionState, status, statusColor)
-        setStatus(sourcesState, status, statusColor)
+        setNetworkStatus(connectionState, status, statusColor)
+        setNetworkStatus(sourcesState, status, statusColor)
+        setNetworkStatus(monitorState, status, statusColor)
         connectionSettings.renderConnection(status, statusColor, wiredLink, link == LinkStatus.WIRED_ERROR)
         val ready = link == LinkStatus.SAMPLE || link == LinkStatus.SAMPLE_MISSING || link == LinkStatus.WIRED_CONNECTED
-        unitMonitor.isEnabled = ready
-        unitMonitor.alpha = if (ready) 1f else 0.65f
+        sourceTiles.forEach { (source, tile) ->
+            val configured = !options.wired || options.hasMonitorIds(source)
+            tile.isEnabled = ready && configured
+            tile.findViewById<TextView>(R.id.source_detail).setText(
+                if (configured) R.string.view_camera else R.string.source_needs_configuration,
+            )
+        }
+        findViewById<TextView>(R.id.monitor_title).setText(selectedSource.label)
+        preview.contentDescription = getString(R.string.monitor_preview_description, getString(selectedSource.label))
         val waiting = state.elevator == ElevatorStatus.DISCOVERING || state.elevator == ElevatorStatus.WAITING
+        elevatorTile.isActivated = waiting
         elevatorTile.isEnabled = ready && !waiting
-        elevatorTile.alpha = if (ready) 1f else 0.65f
         elevatorState.setText(when (state.elevator) {
             ElevatorStatus.IDLE -> R.string.call_home_floor
             ElevatorStatus.DISCOVERING, ElevatorStatus.WAITING -> R.string.waiting_for_reply
@@ -234,8 +412,8 @@ class MainActivity : Activity() {
             ElevatorStatus.DISCONNECTED -> R.string.wired_disconnected
         })
         elevatorState.setTextColor(getColor(when (state.elevator) {
-            ElevatorStatus.DISCOVERING, ElevatorStatus.WAITING -> R.color.amber
-            ElevatorStatus.RESPONDED -> if (options.wired) R.color.status_ready else R.color.amber
+            ElevatorStatus.DISCOVERING, ElevatorStatus.WAITING -> R.color.status_running
+            ElevatorStatus.RESPONDED -> if (options.wired) R.color.status_success else R.color.secondary_text
             ElevatorStatus.TIMED_OUT -> R.color.status_error
             else -> R.color.secondary_text
         }))
@@ -250,22 +428,44 @@ class MainActivity : Activity() {
             state.monitor == MonitorStatus.VIEWING -> if (options.wired) R.string.monitor_live else R.string.sample_mode
             state.monitor == MonitorStatus.ENDED -> if (options.wired) R.string.monitor_ended else R.string.sample_ended
             state.monitor == MonitorStatus.TIMED_OUT -> R.string.monitor_timeout
+            state.monitor == MonitorStatus.BUSY -> if (options.wired) R.string.monitor_busy else R.string.sample_monitor_busy
             else -> R.string.monitor_ready_to_retry
         }
         val showImage = canPlayMonitor && (state.monitor == MonitorStatus.VIEWING || state.monitor == MonitorStatus.ENDED)
-        val monitorColor = if (state.monitor == MonitorStatus.ENDED) R.color.muted_text else statusColor
-        setStatus(monitorState, if (showImage) message else status, monitorColor)
         monitorMessage.setText(message)
         monitorOverlay.visibility = if (showImage) View.GONE else View.VISIBLE
         val canRetry = link == LinkStatus.WIRED_ERROR ||
-            (canPlayMonitor && (monitorInactive || state.monitor == MonitorStatus.TIMED_OUT))
+            (canPlayMonitor && (monitorInactive || state.monitor == MonitorStatus.TIMED_OUT || state.monitor == MonitorStatus.BUSY))
         retry.visibility = if (canRetry) View.VISIBLE else View.GONE
         if (!showImage) preview.setImageDrawable(null)
     }
 
-    private fun setStatus(view: TextView, label: Int, color: Int) {
-        view.setText(label)
-        view.compoundDrawableTintList = ColorStateList.valueOf(getColor(color))
+    private fun setNetworkStatus(view: ImageView, label: Int, color: Int) {
+        view.background = null
+        view.isClickable = false
+        view.isFocusable = false
+        view.setImageResource(when {
+            link == LinkStatus.WIRED_CONNECTED -> R.drawable.ic_network_connected
+            else -> R.drawable.ic_network_disconnected
+        })
+        view.imageTintList = ColorStateList.valueOf(getColor(color))
+        view.contentDescription = getString(R.string.network_status_description, getString(label))
+        view.tooltipText = null
+    }
+
+    private fun openMijia() {
+        val launch = packageManager.getLaunchIntentForPackage("com.xiaomi.smarthome")
+        if (launch == null) {
+            Toast.makeText(this, R.string.mijia_not_installed, Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            startActivity(launch)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, R.string.mijia_unavailable, Toast.LENGTH_LONG).show()
+        } catch (_: SecurityException) {
+            Toast.makeText(this, R.string.mijia_unavailable, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun showSettings() {
@@ -290,12 +490,18 @@ class MainActivity : Activity() {
             return
         }
         window.setDecorFitsSystemWindows(false)
-        window.insetsController?.hide(WindowInsets.Type.statusBars())
+        window.insetsController?.apply {
+            systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsets.Type.statusBars())
+        }
         val root = findViewById<View>(R.id.app_root)
         root.setOnApplyWindowInsetsListener { view, insets ->
-            val types = WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime()
-            val safe = insets.getInsets(types)
-            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            // A revealed status bar overlays this fullscreen page; it must not shrink the workspace.
+            val types = WindowInsets.Type.navigationBars() or WindowInsets.Type.captionBar() or WindowInsets.Type.displayCutout()
+            val safe = insets.getInsetsIgnoringVisibility(types)
+            val ime = insets.getInsets(WindowInsets.Type.ime())
+            view.setPadding(maxOf(safe.left, ime.left), maxOf(safe.top, ime.top),
+                maxOf(safe.right, ime.right), maxOf(safe.bottom, ime.bottom))
             insets
         }
         root.requestApplyInsets()

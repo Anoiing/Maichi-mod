@@ -1,232 +1,294 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.Maichi" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:colorAccent">@color/amber</item>
-        <item name="android:windowBackground">@color/background</item>
-        <item name="android:navigationBarColor">@color/black</item>
-        <item name="android:statusBarColor">@color/background</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
-        <item name="android:alertDialogTheme">@style/Theme.Maichi.Dialog</item>
-    </style>
+<resources xmlns:ns0="http://schemas.android.com/tools">
+  <style name="Theme.Maichi" parent="android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:fontFamily">sans-serif</item>
+    <item name="themePrimary">#A3E635</item>
+    <item name="themeOnPrimary">#262626</item>
+    <item name="themeSurface">#FBFEF7</item>
+    <item name="themeSelection">#EEFBDB</item>
+    <item name="themeShell">#F5F7F0</item>
 
-    <style name="Theme.Maichi.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
-        <item name="android:colorAccent">@color/amber</item>
-        <item name="android:colorBackgroundFloating">@color/panel</item>
-    </style>
-
-    <style name="Widget.Maichi.Screen" parent="">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">match_parent</item>
-        <item name="android:layout_gravity">center_horizontal</item>
-        <item name="android:maxWidth">@dimen/content_max_width</item>
-        <item name="android:orientation">vertical</item>
-        <item name="android:paddingHorizontal">@dimen/screen_gutter</item>
-        <item name="android:paddingVertical">@dimen/screen_vertical</item>
-    </style>
-
-    <style name="Widget.Maichi.PageHeader" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">@dimen/page_header_height</item>
-    </style>
-
-    <style name="Widget.Maichi.PageTitle" parent="">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_gravity">center</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">@dimen/page_title_size</item>
-        <item name="android:accessibilityHeading" tools:targetApi="28">true</item>
-    </style>
-
-    <style name="Widget.Maichi.PageBack" parent="android:style/Widget.Material.Button.Borderless">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">match_parent</item>
-        <item name="android:layout_gravity">start|center_vertical</item>
-        <item name="android:background">?android:attr/selectableItemBackground</item>
-        <item name="android:drawableStart">@drawable/ic_back</item>
-        <item name="android:drawablePadding">6dp</item>
-        <item name="android:gravity">center</item>
-        <item name="android:minWidth">68dp</item>
-        <item name="android:paddingEnd">12dp</item>
-        <item name="android:textColor">@color/secondary_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-    </style>
-
-    <style name="Widget.Maichi.Status" parent="">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_gravity">end|center_vertical</item>
-        <item name="android:drawableStart">@drawable/status_dot</item>
-        <item name="android:drawablePadding">8dp</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:textColor">@color/secondary_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-    </style>
-
-    <style name="Widget.Maichi.TileRow" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_gravity">center</item>
-        <item name="android:maxHeight">@dimen/tile_row_max_height</item>
-        <item name="android:baselineAligned">false</item>
-        <item name="android:orientation">horizontal</item>
-    </style>
-
-    <style name="Widget.Maichi.Tile" parent="">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">match_parent</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:orientation">vertical</item>
-        <item name="android:clickable">true</item>
-        <item name="android:focusable">true</item>
-        <item name="android:background">@drawable/tile_panel</item>
-    </style>
-
-    <style name="Widget.Maichi.TileIcon" parent="">
-        <item name="android:layout_width">@dimen/tile_icon_size</item>
-        <item name="android:layout_height">@dimen/tile_icon_size</item>
-        <item name="android:layout_gravity">center</item>
-        <item name="android:background">@drawable/tile_icon_frame</item>
-        <item name="android:importantForAccessibility">no</item>
-        <item name="android:padding">@dimen/tile_icon_inset</item>
-        <item name="android:scaleType">fitCenter</item>
-    </style>
-
-    <style name="Widget.Maichi.TileCaption" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:orientation">vertical</item>
-        <item name="android:paddingHorizontal">@dimen/tile_caption_inset</item>
-        <item name="android:paddingVertical">@dimen/tile_caption_inset</item>
-    </style>
-
-    <style name="Widget.Maichi.TileTitle" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:importantForAccessibility">no</item>
-        <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">@dimen/tile_title_size</item>
-    </style>
-
-    <style name="Widget.Maichi.TileDetail" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">6dp</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:textColor">@color/secondary_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-        <item name="android:maxLines">2</item>
-        <item name="android:ellipsize">end</item>
-    </style>
-
-    <style name="Widget.Maichi.SourceName" parent="Widget.Maichi.TileTitle">
-        <item name="android:importantForAccessibility">auto</item>
-        <item name="android:textSize">@dimen/page_title_size</item>
-    </style>
-
-    <style name="Widget.Maichi.Section" parent="">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_columnWeight">1</item>
-        <item name="android:layout_gravity">fill_horizontal|top</item>
-        <item name="android:orientation">vertical</item>
-        <item name="android:padding">@dimen/section_inset</item>
-        <item name="android:background">@drawable/settings_panel</item>
-    </style>
-
-    <style name="Widget.Maichi.SectionTitle" parent="">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">@dimen/section_title_size</item>
-        <item name="android:accessibilityHeading" tools:targetApi="28">true</item>
-    </style>
-
-    <style name="Widget.Maichi.Label" parent="">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:textColor">@color/secondary_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-    </style>
-
-    <style name="Widget.Maichi.ModeOption" parent="">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:background">@drawable/setting_control</item>
-        <item name="android:button">@null</item>
-        <item name="android:gravity">center</item>
-        <item name="android:padding">4dp</item>
-        <item name="android:textColor">@color/control_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-    </style>
-
-    <style name="Widget.Maichi.SettingInput" parent="">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:background">@drawable/setting_control</item>
-        <item name="android:gravity">center_vertical</item>
-        <item name="android:paddingHorizontal">10dp</item>
-        <item name="android:textColor">@color/text</item>
-        <item name="android:textColorHint">@color/muted_text</item>
-        <item name="android:textSize">@dimen/label_size</item>
-        <item name="android:fontFamily">sans-serif</item>
-        <item name="android:fontFeatureSettings">tnum</item>
-        <item name="android:inputType">textVisiblePassword</item>
-        <item name="android:singleLine">true</item>
-        <item name="android:importantForAutofill">no</item>
-    </style>
-
-    <style name="Widget.Maichi.SettingsAction" parent="android:style/Widget.Material.Button.Borderless">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minWidth">48dp</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:background">?android:attr/selectableItemBackground</item>
-        <item name="android:drawablePadding">6dp</item>
-        <item name="android:paddingHorizontal">8dp</item>
-        <item name="android:textColor">@color/amber</item>
-        <item name="android:textSize">@dimen/label_size</item>
-        <item name="android:textAllCaps">false</item>
-    </style>
-
-    <style name="Widget.Maichi.ConnectionModeButton" parent="Widget.Maichi.SettingsAction">
-        <item name="android:background">@drawable/connection_mode_button</item>
-        <item name="android:drawableEnd">@drawable/ic_chevron_down</item>
-        <item name="android:paddingHorizontal">12dp</item>
-        <item name="android:paddingVertical">0dp</item>
-    </style>
-
-    <style name="Widget.Maichi.VolumeButton" parent="android:style/Widget.Material.Button.Borderless">
-        <item name="android:layout_width">@dimen/volume_button_size</item>
-        <item name="android:layout_height">@dimen/volume_button_size</item>
-        <item name="android:minWidth">0dp</item>
-        <item name="android:minHeight">0dp</item>
-        <item name="android:padding">0dp</item>
-        <item name="android:background">@drawable/setting_control</item>
-        <item name="android:fontFamily">sans-serif</item>
-        <item name="android:textColor">@color/control_text</item>
-        <item name="android:textSize">23sp</item>
-    </style>
-
-    <style name="Widget.Maichi.PrimaryButton" parent="android:style/Widget.Material.Button.Borderless">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:paddingHorizontal">20dp</item>
-        <item name="android:background">@drawable/primary_button</item>
-        <item name="android:textColor">@color/on_amber</item>
-        <item name="android:textSize">@dimen/label_size</item>
-        <item name="android:textAllCaps">false</item>
-    </style>
+    <item name="android:colorAccent">@color/primary</item>
+    <item name="android:colorControlActivated">@color/text</item>
+    <item name="android:colorControlNormal">@color/text</item>
+    <item name="android:textColorHighlight">@color/control_selected</item>
+    <item name="android:windowBackground">@color/background</item>
+    <item name="android:navigationBarColor">@color/background</item>
+    <item name="android:statusBarColor">@color/background</item>
+    <item name="android:windowLightStatusBar">true</item>
+    <item name="android:windowLightNavigationBar" ns0:targetApi="27">true</item>
+    <item name="android:alertDialogTheme">@style/Theme.Maichi.Dialog</item>
+  </style>
+  <style name="Theme.Maichi.Dialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
+    <item name="android:colorAccent">@color/primary</item>
+    <item name="android:colorControlActivated">@color/text</item>
+    <item name="android:colorControlNormal">@color/text</item>
+    <item name="android:textColorHighlight">@color/control_selected</item>
+    <item name="android:colorBackgroundFloating">@color/panel</item>
+    <item name="android:windowElevation">0dp</item>
+    <item name="android:windowBackground">@color/panel</item>
+    <item name="android:fontFamily">sans-serif</item>
+  </style>
+  <style name="Widget.Maichi.Screen" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">match_parent</item>
+    <item name="android:layout_gravity">center_horizontal</item>
+    <item name="android:orientation">vertical</item>
+    <item name="android:paddingHorizontal">@dimen/screen_gutter</item>
+    <item name="android:paddingVertical">@dimen/screen_vertical</item>
+    <item name="android:layout_margin">@dimen/workspace_margin</item>
+    <item name="android:background">@drawable/workspace_surface</item>
+  </style>
+  <style name="Widget.Maichi.PageHeader" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minHeight">@dimen/page_header_height</item>
+    <item name="android:paddingBottom">16dp</item>
+    <item name="android:background">@drawable/page_header_rule</item>
+  </style>
+  <style name="Widget.Maichi.PageTitle" parent="">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_gravity">start|center_vertical</item>
+    <item name="android:layout_marginStart">62dp</item>
+    <item name="android:fontFamily">sans-serif-medium</item>
+    <item name="android:textFontWeight" ns0:targetApi="28">600</item>
+    <item name="android:letterSpacing">-0.02</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/page_title_size</item>
+    <item name="android:accessibilityHeading" ns0:targetApi="28">true</item>
+  </style>
+  <style name="Widget.Maichi.PageBack" parent="android:style/Widget.Material.Button.Borderless">
+    <item name="android:layout_width">50dp</item>
+    <item name="android:layout_height">50dp</item>
+    <item name="android:layout_gravity">start|center_vertical</item>
+    <item name="android:background">@null</item>
+    <item name="android:drawableStart">@drawable/ic_back</item>
+    <item name="android:drawablePadding">0dp</item>
+    <item name="android:gravity">center</item>
+    <item name="android:minWidth">0dp</item>
+    <item name="android:padding">12dp</item>
+    <item name="android:textColor">@color/secondary_text_state</item>
+    <item name="android:textSize">@dimen/label_size</item>
+  </style>
+  <style name="Widget.Maichi.Status" parent="">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_gravity">end|center_vertical</item>
+    <item name="android:drawableStart">@drawable/status_dot</item>
+    <item name="android:drawablePadding">8dp</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:textColor">@color/secondary_text_state</item>
+    <item name="android:textSize">@dimen/label_size</item>
+  </style>
+  <style name="Widget.Maichi.TileRow" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_gravity">center</item>
+    <item name="android:maxHeight">@dimen/tile_row_max_height</item>
+    <item name="android:baselineAligned">false</item>
+    <item name="android:orientation">horizontal</item>
+  </style>
+  <style name="Widget.Maichi.Tile" parent="">
+    <item name="surfaceRole">card</item>
+    <item name="android:layout_width">0dp</item>
+    <item name="android:layout_height">match_parent</item>
+    <item name="android:layout_weight">1</item>
+    <item name="android:orientation">vertical</item>
+    <item name="android:clickable">true</item>
+    <item name="android:focusable">true</item>
+    <item name="android:background">@null</item>
+    <item name="android:elevation">0dp</item>
+  </style>
+  <style name="Widget.Maichi.TileIcon" parent="">
+    <item name="android:tint">@null</item>
+    <item name="android:layout_width">@dimen/tile_icon_size</item>
+    <item name="android:layout_height">@dimen/tile_icon_size</item>
+    <item name="android:layout_gravity">center</item>
+    <item name="android:importantForAccessibility">no</item>
+    <item name="android:padding">@dimen/tile_icon_inset</item>
+    <item name="android:scaleType">fitCenter</item>
+  </style>
+  <style name="Widget.Maichi.TileTitle" parent="">
+    <item name="android:drawableTint">@color/content_text</item>
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:fontFamily">sans-serif-medium</item>
+    <item name="android:textFontWeight" ns0:targetApi="28">600</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:importantForAccessibility">no</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/tile_title_size</item>
+  </style>
+  <style name="Widget.Maichi.TileDetail" parent="">
+    <item name="android:drawableTint">@color/secondary_text_state</item>
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_marginTop">8dp</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:textColor">@color/secondary_text_state</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:maxLines">2</item>
+    <item name="android:ellipsize">end</item>
+  </style>
+  <style name="Widget.Maichi.SourceName" parent="Widget.Maichi.TileTitle">
+    <item name="android:importantForAccessibility">auto</item>
+  </style>
+  <style name="Widget.Maichi.SectionTitle" parent="">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:fontFamily">sans-serif-medium</item>
+    <item name="android:textFontWeight" ns0:targetApi="28">600</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/section_title_size</item>
+    <item name="android:accessibilityHeading" ns0:targetApi="28">true</item>
+  </style>
+  <style name="Widget.Maichi.Label" parent="">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:includeFontPadding">false</item>
+    <item name="android:textColor">@color/secondary_text_state</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:lineSpacingExtra">2dp</item>
+  </style>
+  <style name="Widget.Maichi.NetworkStatus" parent="">
+    <item name="android:layout_width">40dp</item>
+    <item name="android:layout_height">40dp</item>
+    <item name="android:layout_gravity">end|center_vertical</item>
+    <item name="android:padding">4dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:clickable">false</item>
+    <item name="android:focusable">false</item>
+    <item name="android:scaleType">fitCenter</item>
+  </style>
+  <style name="Widget.Maichi.ModeOption" parent="">
+    <item name="android:layout_width">0dp</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_weight">1</item>
+    <item name="android:minHeight">50dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:button">@drawable/mediora_radio</item>
+    <item name="android:buttonTint">@null</item>
+    <item name="android:gravity">center</item>
+    <item name="android:padding">4dp</item>
+    <item name="android:textColor">@color/control_text</item>
+    <item name="android:textSize">@dimen/label_size</item>
+  </style>
+  <style name="Widget.Maichi.SettingInput" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minHeight">50dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:gravity">center_vertical</item>
+    <item name="android:paddingHorizontal">12dp</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textColorHint">@color/muted_text</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:fontFamily">sans-serif</item>
+    <item name="android:fontFeatureSettings">tnum</item>
+    <item name="android:inputType">textVisiblePassword</item>
+    <item name="android:singleLine">true</item>
+    <item name="android:importantForAutofill">no</item>
+  </style>
+  <style name="Widget.Maichi.SettingsAction" parent="android:style/Widget.Material.Button.Borderless">
+    <item name="surfaceRole">action</item>
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minWidth">48dp</item>
+    <item name="android:minHeight">50dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:drawablePadding">6dp</item>
+    <item name="android:paddingHorizontal">8dp</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:textAllCaps">false</item>
+  </style>
+  <style name="Widget.Maichi.ConnectionModeButton" parent="Widget.Maichi.SettingsAction">
+    <item name="surfaceRole">outline</item>
+    <item name="android:background">@null</item>
+    <item name="android:drawableEnd">@drawable/ic_chevron_down</item>
+    <item name="android:drawableStart">@drawable/ic_settings_network</item>
+    <item name="android:paddingHorizontal">12dp</item>
+    <item name="android:paddingVertical">0dp</item>
+  </style>
+  <style name="Widget.Maichi.SettingsSection" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:orientation">vertical</item>
+  </style>
+  <style name="Widget.Maichi.SettingsTab" parent="">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minHeight">54dp</item>
+    <item name="android:minWidth">0dp</item>
+    <item name="android:paddingHorizontal">21dp</item>
+    <item name="android:paddingVertical">13dp</item>
+    <item name="android:button">@null</item>
+    <item name="android:gravity">center</item>
+    <item name="android:drawablePadding">8dp</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:fontFamily">sans-serif-medium</item>
+    <item name="android:textAllCaps">false</item>
+  </style>
+  <style name="Widget.Maichi.SettingsDescription" parent="Widget.Maichi.Label">
+    <item name="android:layout_marginTop">8dp</item>
+    <item name="android:textColor">@color/muted_text</item>
+    <item name="android:textSize">@dimen/caption_size</item>
+  </style>
+  <style name="Widget.Maichi.SettingsForm" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_marginTop">24dp</item>
+    <item name="android:alignmentMode">alignBounds</item>
+  </style>
+  <style name="Widget.Maichi.SettingsDivider" parent="">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">1dp</item>
+    <item name="android:background">@color/divider</item>
+  </style>
+  <style name="Widget.Maichi.VolumeButton" parent="android:style/Widget.Material.Button.Borderless">
+    <item name="android:layout_width">@dimen/volume_button_size</item>
+    <item name="android:layout_height">@dimen/volume_button_size</item>
+    <item name="android:minWidth">0dp</item>
+    <item name="android:minHeight">0dp</item>
+    <item name="android:padding">12dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:fontFamily">sans-serif</item>
+    <item name="android:textColor">@color/control_text</item>
+    <item name="android:textSize">16sp</item>
+  </style>
+  <style name="Widget.Maichi.PrimaryButton" parent="android:style/Widget.Material.Button.Borderless">
+    <item name="surfaceRole">primary</item>
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minHeight">50dp</item>
+    <item name="android:paddingHorizontal">20dp</item>
+    <item name="android:background">@null</item>
+    <item name="android:textColor">@color/on_amber</item>
+    <item name="android:textSize">@dimen/label_size</item>
+    <item name="android:textAllCaps">false</item>
+  </style>
+  <style name="Widget.Maichi.SourceTile" parent="">
+    <item name="surfaceRole">card</item>
+    <item name="android:orientation">vertical</item>
+    <item name="android:layout_width">0dp</item>
+    <item name="android:layout_height">match_parent</item>
+    <item name="android:layout_weight">1</item>
+    <item name="android:clickable">true</item>
+    <item name="android:focusable">true</item>
+  </style>
+  <style name="Widget.Maichi.CallButton" parent="Widget.Maichi.PrimaryButton">
+    <item name="android:layout_width">@dimen/call_action_size</item>
+    <item name="android:layout_height">@dimen/call_action_size</item>
+    <item name="android:paddingHorizontal">12dp</item>
+    <item name="android:paddingVertical">12dp</item>
+    <item name="android:gravity">center</item>
+    <item name="android:drawablePadding">12dp</item>
+    <item name="android:fontFamily">sans-serif-medium</item>
+    <item name="android:textColor">@color/content_text</item>
+    <item name="android:textSize">@dimen/call_action_text</item>
+  </style>
 </resources>

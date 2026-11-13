@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.maichimod.prototype.ContentLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/call_page" style="@style/Widget.Maichi.Screen" android:visibility="gone">
+    <FrameLayout style="@style/Widget.Maichi.PageHeader" android:layout_height="wrap_content" android:minHeight="@dimen/page_header_height">
+        <com.maichimod.prototype.MedioraButton android:id="@+id/call_back" style="@style/Widget.Maichi.PageBack" android:contentDescription="@string/back" />
+        <TextView style="@style/Widget.Maichi.PageTitle" android:text="@string/unit_door_call" />
+    </FrameLayout>
+    <TextView android:id="@+id/call_state" style="@style/Widget.Maichi.Status" android:layout_gravity="center_horizontal" android:layout_marginTop="4dp" android:gravity="center" android:maxLines="2" android:accessibilityLiveRegion="polite" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="@dimen/tile_gap" android:orientation="horizontal" android:gravity="center_vertical" android:baselineAligned="false">
+        <FrameLayout android:id="@+id/call_video_frame" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginEnd="@dimen/page_gap" android:background="@drawable/video_surface">
+            <ImageView android:id="@+id/call_preview" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:background="@drawable/video_surface" android:contentDescription="@string/unit_camera_preview" />
+        </FrameLayout>
+        <com.maichimod.prototype.SquareActionColumn android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical">
+            <com.maichimod.prototype.CallActionButton android:id="@+id/unlock_call" style="@style/Widget.Maichi.CallButton" app:surfaceRole="outline" android:drawableTop="@drawable/ic_unlock_call" android:text="@string/unlock_call" />
+            <com.maichimod.prototype.CallActionButton android:id="@+id/call_action" style="@style/Widget.Maichi.CallButton" android:layout_marginTop="@dimen/page_gap" app:surfaceRole="primary" android:drawableTop="@drawable/ic_answer_call" android:text="@string/answer_call" />
+        </com.maichimod.prototype.SquareActionColumn>
+    </LinearLayout>
+</com.maichimod.prototype.ContentLayout>

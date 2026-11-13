@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <attr name="themePrimary" format="color" />
+    <attr name="themeOnPrimary" format="color" />
+    <attr name="themeSurface" format="color" />
+    <attr name="themeSelection" format="color" />
+    <attr name="themeShell" format="color" />
+
     <declare-styleable name="ContentLayout">
         <attr name="android:maxWidth" />
         <attr name="android:maxHeight" />
+    </declare-styleable>
+    <declare-styleable name="MedioraSurface">
+        <attr name="surfaceRole" format="enum">
+            <enum name="primary" value="0" />
+            <enum name="outline" value="1" />
+            <enum name="card" value="2" />
+            <enum name="feature" value="3" />
+            <enum name="destructive" value="4" />
+            <enum name="input" value="5" />
+            <enum name="live" value="6" />
+      <enum name="action" value="8" />
+        </attr>
     </declare-styleable>
 </resources>

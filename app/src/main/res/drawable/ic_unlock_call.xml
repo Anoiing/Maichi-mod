@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lucide DoorOpen，圆头细线适配触屏；授权见 assets/NOTICE-lucide.txt。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="@dimen/call_action_icon" android:height="@dimen/call_action_icon" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M11 20H2" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M11 4H8a2 2 0 0 0-2 2v14" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M14 12h.01" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M22 20h-3" />
+</vector>

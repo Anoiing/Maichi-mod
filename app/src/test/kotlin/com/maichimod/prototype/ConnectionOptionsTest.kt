@@ -57,6 +57,29 @@ class ConnectionOptionsTest {
     }
 
     @Test
+    fun eachMonitorUsesItsOwnDoorStationWithoutChangingTheUnitElevatorProfile() {
+        val options = optionsWith(
+            ConnectionField.INDOOR_ID to "00000000001",
+            ConnectionField.PEER_ID to "00000000002",
+            ConnectionField.PEER_IP to "192.0.2.20",
+            ConnectionField.BASEMENT_ONE_ID to "00000000003",
+            ConnectionField.BASEMENT_ONE_IP to "192.0.2.21",
+            ConnectionField.BASEMENT_TWO_ID to "m00000000004",
+        )
+        val local = requireNotNull(ipv4Address("192.0.2.10"))
+        assertTrue(MonitorSource.entries.all(options::hasMonitorIds))
+        assertEquals("M00000000003", options.terminalProfile(local, 24, MonitorSource.BASEMENT_ONE).peerId)
+        assertEquals("192.0.2.21", options.terminalProfile(local, 24, MonitorSource.BASEMENT_ONE).expectedPeerAddress?.hostAddress)
+        assertEquals("M00000000004", options.terminalProfile(local, 24, MonitorSource.BASEMENT_TWO).peerId)
+        assertNull(options.terminalProfile(local, 24, MonitorSource.BASEMENT_TWO).expectedPeerAddress)
+        assertEquals("M00000000002", options.terminalProfile(local, 24).peerId)
+        assertEquals("192.0.2.20", options.terminalProfile(local, 24).expectedPeerAddress?.hostAddress)
+        assertFalse(optionsWith(ConnectionField.INDOOR_ID to "00000000001").hasMonitorIds(MonitorSource.BASEMENT_ONE))
+        assertNull(options.withField(ConnectionField.BASEMENT_ONE_ID, "S00000000003"))
+        assertNull(options.withField(ConnectionField.BASEMENT_TWO_IP, "127.0.0.1"))
+    }
+
+    @Test
     fun editingRecordsKeepsTheCurrentSessionAndModeChangesReconnect() {
         val wired = ConnectionOptions(wired = true)
         val record = requireNotNull(wired.withField(ConnectionField.CENTER_IP, "192.0.2.30"))
@@ -72,4 +95,16 @@ class ConnectionOptionsTest {
         fields.fold(ConnectionOptions(wired = true)) { options, (field, value) ->
             requireNotNull(options.withField(field, value))
         }
+
+    @Test
+    fun automaticHangUpDefaultsOnAndDoesNotReconnectTheNetwork() {
+        for (wired in listOf(false, true)) {
+            val options = ConnectionOptions(wired = wired)
+            assertTrue(options.autoHangUpAfterUnlock)
+            val manual = options.copy(autoHangUpAfterUnlock = false)
+            assertFalse(manual.autoHangUpAfterUnlock)
+            assertFalse(manual.requiresReconnect(options))
+            assertFalse(options.requiresReconnect(manual))
+        }
+    }
 }

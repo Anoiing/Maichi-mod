@@ -1,176 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.maichimod.prototype.ContentLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/dashboard"
-    style="@style/Widget.Maichi.Screen">
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/home_header_height">
-
-        <TextClock
-            style="@style/Widget.Maichi.Label"
-            android:layout_gravity="start|center_vertical"
-            android:format12Hour="MM/dd EEE"
-            android:format24Hour="MM/dd EEE" />
-
-        <TextClock
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:fontFamily="sans-serif-medium"
-            android:fontFeatureSettings="tnum"
-            android:format12Hour="HH:mm"
-            android:format24Hour="HH:mm"
-            android:includeFontPadding="false"
-            android:letterSpacing="0.025"
-            android:textColor="@color/amber"
-            android:textSize="@dimen/clock_size" />
-
-        <TextView
-            android:id="@+id/connection_state"
-            style="@style/Widget.Maichi.Status"
-            android:accessibilityLiveRegion="polite"
-            android:text="@string/loading_samples" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_gravity="bottom"
-            android:background="@color/divider" />
-    </FrameLayout>
-
-    <Space
-        android:layout_width="1dp"
-        android:layout_height="0dp"
-        android:layout_weight="0.85" />
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="5">
-
-        <com.maichimod.prototype.ContentLayout style="@style/Widget.Maichi.TileRow">
-
-            <LinearLayout
-                android:id="@+id/monitor_tile"
-                style="@style/Widget.Maichi.Tile"
-                android:orientation="vertical"
-                android:layout_weight="1.22"
-                android:background="@drawable/tile_monitor"
-                android:contentDescription="@string/monitor">
-
-                <FrameLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1">
-
-                    <ImageView
-                        style="@style/Widget.Maichi.TileIcon"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_monitor"
-                        android:tint="@color/on_amber" />
-                </FrameLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginHorizontal="@dimen/tile_caption_inset"
-                    android:background="#40261C15" />
-
-                <LinearLayout style="@style/Widget.Maichi.TileCaption">
-                    <TextView
-                        style="@style/Widget.Maichi.TileTitle"
-                        android:drawableEnd="@drawable/ic_chevron_right"
-                        android:drawableTint="@color/on_amber"
-                        android:textColor="@color/on_amber"
-                        android:text="@string/monitor" />
-
-                    <TextView
-                        style="@style/Widget.Maichi.TileDetail"
-                        android:textColor="@color/on_amber_secondary"
-                        android:importantForAccessibility="no"
-                        android:text="@string/choose_door_station" />
+<com.maichimod.prototype.HomeDashboard xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/dashboard" style="@style/Widget.Maichi.Screen">
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <FrameLayout style="@style/Widget.Maichi.PageHeader">
+                <TextView style="@style/Widget.Maichi.PageTitle" android:layout_marginStart="0dp" android:text="@string/home" />
+                <ImageView android:id="@+id/connection_state" style="@style/Widget.Maichi.NetworkStatus" android:contentDescription="@string/network_status" />
+            </FrameLayout>
+            <com.maichimod.prototype.HomeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:minHeight="400dp" android:baselineAligned="false" android:gravity="center_vertical">
+                <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.67" android:layout_marginEnd="24dp" android:orientation="vertical" android:gravity="center_vertical">
+                    <TextClock android:id="@+id/home_clock" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="sans-serif" android:textStyle="bold" android:includeFontPadding="false" android:fontFeatureSettings="tnum" android:format12Hour="HH:mm" android:format24Hour="HH:mm" android:singleLine="true" android:textSize="@dimen/clock_size" android:textColor="@color/text" />
+                    <View android:layout_width="64dp" android:layout_height="5dp" android:layout_marginTop="12dp" android:background="@drawable/clock_accent" android:importantForAccessibility="no" />
+                    <TextClock android:id="@+id/home_date" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:fontFamily="sans-serif" android:textStyle="bold" android:includeFontPadding="false" android:format12Hour="MM月dd日" android:format24Hour="MM月dd日" android:textSize="@dimen/date_size" android:textColor="@color/text" />
+                    <TextClock android:id="@+id/home_weekday" style="@style/Widget.Maichi.Label" android:textSize="@dimen/date_size" android:layout_marginTop="8dp" android:textStyle="bold" android:format12Hour="EEEE" android:format24Hour="EEEE" />
                 </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/elevator_tile"
-                style="@style/Widget.Maichi.Tile"
-                android:orientation="vertical"
-                android:layout_marginStart="@dimen/tile_gap"
-                android:contentDescription="@string/elevator">
-
-                <FrameLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1">
-
-                    <ImageView
-                        style="@style/Widget.Maichi.TileIcon"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_elevator" />
-                </FrameLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginHorizontal="@dimen/tile_caption_inset"
-                    android:background="@color/divider" />
-
-                <LinearLayout style="@style/Widget.Maichi.TileCaption">
-                    <TextView
-                        style="@style/Widget.Maichi.TileTitle"
-                        android:text="@string/elevator" />
-
-                    <TextView
-                        android:id="@+id/elevator_state"
-                        style="@style/Widget.Maichi.TileDetail"
-                        android:accessibilityLiveRegion="polite"
-                        android:text="@string/call_home_floor" />
+                <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.33" android:orientation="vertical">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1.45" android:orientation="horizontal" android:baselineAligned="false">
+                        <com.maichimod.prototype.MaterialPanel android:id="@+id/mijia_tile" style="@style/Widget.Maichi.Tile" app:surfaceRole="feature" android:padding="@dimen/tile_caption_inset" android:contentDescription="@string/open_mijia">
+                            <ImageView android:id="@+id/mijia_icon" style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_home_mijia" android:contentDescription="@null" />
+                            <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
+                            <TextView style="@style/Widget.Maichi.TileTitle" android:layout_width="match_parent" android:textSize="@dimen/page_title_size" android:drawableEnd="@drawable/ic_chevron_right" android:drawableTint="@color/on_primary" android:textColor="@color/on_primary" android:text="@string/mijia" />
+                            <TextView style="@style/Widget.Maichi.TileDetail" android:textSize="@dimen/caption_size" android:textColor="@color/on_primary" android:text="@string/mijia_tile_detail" />
+                        </com.maichimod.prototype.MaterialPanel>
+                        <com.maichimod.prototype.MaterialPanel android:id="@+id/monitor_tile" style="@style/Widget.Maichi.Tile" android:layout_marginStart="16dp" android:padding="@dimen/tile_caption_inset" android:contentDescription="@string/monitor">
+                            <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_camera" android:contentDescription="@null" />
+                            <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
+                            <TextView style="@style/Widget.Maichi.TileTitle" android:layout_width="match_parent" android:textSize="@dimen/page_title_size" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/monitor" />
+                            <TextView style="@style/Widget.Maichi.TileDetail" android:textSize="@dimen/caption_size" android:text="@string/home_monitor_detail" />
+                        </com.maichimod.prototype.MaterialPanel>
+                    </LinearLayout>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="16dp" android:orientation="horizontal" android:baselineAligned="false">
+                        <com.maichimod.prototype.MaterialPanel android:id="@+id/elevator_tile" style="@style/Widget.Maichi.Tile" android:orientation="vertical" android:paddingHorizontal="@dimen/tile_caption_inset" android:paddingVertical="16dp" android:contentDescription="@string/elevator">
+                            <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_elevator" android:contentDescription="@null" />
+                            <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
+                            <TextView style="@style/Widget.Maichi.TileTitle" android:text="@string/elevator" />
+                            <TextView android:id="@+id/elevator_state" style="@style/Widget.Maichi.TileDetail" android:accessibilityLiveRegion="polite" android:text="@string/call_home_floor" />
+                        </com.maichimod.prototype.MaterialPanel>
+                        <com.maichimod.prototype.MaterialPanel android:id="@+id/settings_button" style="@style/Widget.Maichi.Tile" android:orientation="vertical" android:layout_marginStart="16dp" android:paddingHorizontal="@dimen/tile_caption_inset" android:paddingVertical="16dp" android:contentDescription="@string/settings">
+                            <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_settings" android:contentDescription="@null" />
+                            <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
+                            <TextView style="@style/Widget.Maichi.TileTitle" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/settings" />
+                            <TextView style="@style/Widget.Maichi.TileDetail" android:text="@string/settings_tile_detail" />
+                        </com.maichimod.prototype.MaterialPanel>
+                    </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/settings_button"
-                style="@style/Widget.Maichi.Tile"
-                android:orientation="vertical"
-                android:layout_marginStart="@dimen/tile_gap"
-                android:contentDescription="@string/settings">
-
-                <FrameLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1">
-
-                    <ImageView
-                        style="@style/Widget.Maichi.TileIcon"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_settings" />
-                </FrameLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginHorizontal="@dimen/tile_caption_inset"
-                    android:background="@color/divider" />
-
-                <LinearLayout style="@style/Widget.Maichi.TileCaption">
-                    <TextView
-                        style="@style/Widget.Maichi.TileTitle"
-                        android:drawableEnd="@drawable/ic_chevron_right"
-                        android:text="@string/settings" />
-
-                    <TextView
-                        style="@style/Widget.Maichi.TileDetail"
-                        android:importantForAccessibility="no"
-                        android:text="@string/settings_tile_detail" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.maichimod.prototype.ContentLayout>
-    </FrameLayout>
-
-    <Space
-        android:layout_width="1dp"
-        android:layout_height="0dp"
-        android:layout_weight="1.35" />
-</com.maichimod.prototype.ContentLayout>
+            </com.maichimod.prototype.HomeLayout>
+        </LinearLayout>
+    </ScrollView>
+</com.maichimod.prototype.HomeDashboard>

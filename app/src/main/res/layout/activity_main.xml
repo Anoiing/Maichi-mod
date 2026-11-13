@@ -9,4 +9,5 @@
     <include layout="@layout/page_monitor_sources" />
     <include layout="@layout/page_monitor" />
     <include layout="@layout/page_settings" />
+    <include layout="@layout/page_call" />
 </FrameLayout>

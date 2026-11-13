@@ -13,10 +13,10 @@
         android:layout_weight="1"
         android:textColor="@color/text" />
 
-    <Button
+    <com.maichimod.prototype.MedioraButton
         android:id="@+id/volume_decrease"
         style="@style/Widget.Maichi.VolumeButton"
-        android:text="@string/minus" />
+        android:drawableStart="@drawable/ic_volume_minus" />
 
     <TextView
         android:id="@+id/volume_value"
@@ -27,10 +27,10 @@
         android:fontFeatureSettings="tnum"
         android:gravity="center"
         android:paddingHorizontal="4dp"
-        android:textColor="@color/amber" />
+        android:textColor="@color/text" />
 
-    <Button
+    <com.maichimod.prototype.MedioraButton
         android:id="@+id/volume_increase"
         style="@style/Widget.Maichi.VolumeButton"
-        android:text="@string/plus" />
+        android:drawableStart="@drawable/ic_volume_plus" />
 </LinearLayout>

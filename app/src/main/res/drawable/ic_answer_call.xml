@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lucide PhoneIncoming，圆头细线适配触屏；授权见 assets/NOTICE-lucide.txt。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="@dimen/call_action_icon" android:height="@dimen/call_action_icon" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M16 2v6h6" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="m22 2-6 6" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384" />
+</vector>

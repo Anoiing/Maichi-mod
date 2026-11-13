@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.maichimod.prototype.protocol.TerminalProfile
 import com.maichimod.prototype.protocol.ipv4Address
 import com.maichimod.prototype.protocol.isTerminalId
+import com.maichimod.prototype.transport.CaptureFixtures
 import java.net.Inet4Address
 import java.util.Locale
 
@@ -24,6 +25,12 @@ internal enum class ConnectionField(
     PEER_ID("peerId", R.string.peer_id, R.string.peer_id_help, R.string.invalid_terminal_id),
     PEER_IP("peerIp", R.string.peer_ip, R.string.peer_ip_help, R.string.invalid_ipv4, R.string.discover_automatically),
     CENTER_IP("centerIp", R.string.center_ip, R.string.center_ip_help, R.string.invalid_ipv4, affectsSession = false),
+    BASEMENT_ONE_ID("basementOneId", R.string.basement_one_id, R.string.peer_id_help, R.string.invalid_terminal_id),
+    BASEMENT_ONE_IP("basementOneIp", R.string.basement_one_ip, R.string.peer_ip_help, R.string.invalid_ipv4,
+        R.string.discover_automatically),
+    BASEMENT_TWO_ID("basementTwoId", R.string.basement_two_id, R.string.peer_id_help, R.string.invalid_terminal_id),
+    BASEMENT_TWO_IP("basementTwoIp", R.string.basement_two_ip, R.string.peer_ip_help, R.string.invalid_ipv4,
+        R.string.discover_automatically),
     ;
 
     fun normalize(raw: String): String? {
@@ -31,10 +38,10 @@ internal enum class ConnectionField(
         if (input.isEmpty()) return ""
         return when (this) {
             INDOOR_ID -> terminalId(input, 'S')
-            PEER_ID -> terminalId(input, 'M')
+            PEER_ID, BASEMENT_ONE_ID, BASEMENT_TWO_ID -> terminalId(input, 'M')
             SUBNET_MASK -> subnetPrefix(input)?.let(::maskForPrefix)
             INDOOR_MAC -> macAddress(input)
-            LOCAL_IP, GATEWAY, PEER_IP, CENTER_IP -> ipv4Address(input)?.takeIf { address ->
+            LOCAL_IP, GATEWAY, PEER_IP, CENTER_IP, BASEMENT_ONE_IP, BASEMENT_TWO_IP -> ipv4Address(input)?.takeIf { address ->
                 (address.address[0].toInt() and 255) in 1..223 &&
                     !address.isLoopbackAddress && !address.isLinkLocalAddress
             }?.hostAddress
@@ -43,20 +50,39 @@ internal enum class ConnectionField(
 
     fun display(value: String): String = when (this) {
         INDOOR_ID -> value.removePrefix("S")
-        PEER_ID -> value.removePrefix("M")
+        PEER_ID, BASEMENT_ONE_ID, BASEMENT_TWO_ID -> value.removePrefix("M")
         else -> value
     }
+}
+
+internal enum class MonitorSource(
+    val label: Int,
+    val tile: Int,
+    val idField: ConnectionField,
+    val ipField: ConnectionField,
+    val fixture: String,
+) {
+    UNIT(R.string.unit_door_station, R.id.unit_monitor, ConnectionField.PEER_ID, ConnectionField.PEER_IP,
+        CaptureFixtures.MONITOR_RX),
+    BASEMENT_ONE(R.string.basement_door_station_one, R.id.basement_one_monitor,
+        ConnectionField.BASEMENT_ONE_ID, ConnectionField.BASEMENT_ONE_IP, CaptureFixtures.BASEMENT_ONE_RX),
+    BASEMENT_TWO(R.string.basement_door_station_two, R.id.basement_two_monitor,
+        ConnectionField.BASEMENT_TWO_ID, ConnectionField.BASEMENT_TWO_IP, CaptureFixtures.BASEMENT_TWO_RX),
 }
 
 internal data class ConnectionOptions(
     val wired: Boolean = false,
     val simulateTimeout: Boolean = false,
     private val values: Map<ConnectionField, String> = emptyMap(),
+    val autoHangUpAfterUnlock: Boolean = true,
 ) {
     operator fun get(field: ConnectionField): String = values[field].orEmpty()
 
     val hasTerminalIds: Boolean
-        get() = get(ConnectionField.INDOOR_ID).isTerminalId('S') && get(ConnectionField.PEER_ID).isTerminalId('M')
+        get() = hasMonitorIds(MonitorSource.UNIT)
+
+    fun hasMonitorIds(source: MonitorSource): Boolean =
+        get(ConnectionField.INDOOR_ID).isTerminalId('S') && get(source.idField).isTerminalId('M')
 
     val preferredLocalIp: Inet4Address?
         get() = ipv4Address(get(ConnectionField.LOCAL_IP))
@@ -72,12 +98,13 @@ internal data class ConnectionOptions(
         return (expectedIp == null || expectedIp == address) && (expectedPrefix == null || expectedPrefix == prefix)
     }
 
-    fun terminalProfile(address: Inet4Address, prefix: Int): TerminalProfile = TerminalProfile(
+    @JvmOverloads
+    fun terminalProfile(address: Inet4Address, prefix: Int, source: MonitorSource = MonitorSource.UNIT): TerminalProfile = TerminalProfile(
         indoorId = get(ConnectionField.INDOOR_ID),
-        peerId = get(ConnectionField.PEER_ID),
+        peerId = get(source.idField),
         localAddress = address,
         prefixLength = prefix,
-        expectedPeerAddress = ipv4Address(get(ConnectionField.PEER_IP)),
+        expectedPeerAddress = ipv4Address(get(source.ipField)),
     )
 
     fun requiresReconnect(previous: ConnectionOptions): Boolean =
@@ -91,6 +118,7 @@ internal data class ConnectionOptions(
         val editor = preferences.edit()
             .putBoolean("wired", wired)
             .putBoolean("simulateTimeout", simulateTimeout)
+            .putBoolean("autoHangUpAfterUnlock", autoHangUpAfterUnlock)
         for (field in ConnectionField.entries) editor.putString(field.key, this[field])
         editor.apply()
     }
@@ -99,6 +127,7 @@ internal data class ConnectionOptions(
         fun load(preferences: SharedPreferences, defaultWired: Boolean): ConnectionOptions = ConnectionOptions(
             wired = preferences.getBoolean("wired", defaultWired),
             simulateTimeout = preferences.getBoolean("simulateTimeout", false),
+            autoHangUpAfterUnlock = preferences.getBoolean("autoHangUpAfterUnlock", true),
             values = buildMap {
                 for (field in ConnectionField.entries) {
                     val value = field.normalize(preferences.getString(field.key, "").orEmpty())

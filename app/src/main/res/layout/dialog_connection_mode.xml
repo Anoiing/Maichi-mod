@@ -1,45 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingHorizontal="24dp"
-    android:paddingTop="12dp">
-
-    <RadioGroup
-        android:id="@+id/mode_group"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <RadioButton
-            android:id="@+id/option_sample"
-            style="@style/Widget.Maichi.ModeOption"
-            android:text="@string/sample_mode" />
-
-        <RadioButton
-            android:id="@+id/option_wired"
-            style="@style/Widget.Maichi.ModeOption"
-            android:layout_marginStart="8dp"
-            android:text="@string/wired_mode" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="24dp" android:paddingTop="16dp" android:paddingBottom="12dp">
+    <RadioGroup android:id="@+id/mode_group" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <com.maichimod.prototype.MedioraRadioButton android:id="@+id/option_sample" style="@style/Widget.Maichi.ModeOption" android:text="@string/sample_mode" />
+        <com.maichimod.prototype.MedioraRadioButton android:id="@+id/option_wired" style="@style/Widget.Maichi.ModeOption" android:layout_marginStart="8dp" android:text="@string/wired_mode" />
     </RadioGroup>
-
-    <CheckBox
-        android:id="@+id/simulate_timeout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:minHeight="48dp"
-        android:text="@string/simulate_timeout"
-        android:textColor="@color/secondary_text"
-        android:textSize="@dimen/label_size" />
-
-    <TextView
-        android:id="@+id/wired_mode_help"
-        style="@style/Widget.Maichi.Label"
-        android:layout_width="match_parent"
-        android:layout_marginTop="12dp"
-        android:lineSpacingExtra="3dp"
-        android:text="@string/wired_mode_help"
-        android:visibility="gone" />
+    <com.maichimod.prototype.MedioraCheckBox android:id="@+id/simulate_timeout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:minHeight="48dp" android:text="@string/simulate_timeout" android:textColor="@color/secondary_text" android:textSize="@dimen/label_size" />
+    <TextView android:id="@+id/wired_mode_help" style="@style/Widget.Maichi.Label" android:layout_width="match_parent" android:layout_marginTop="12dp" android:lineSpacingExtra="3dp" android:text="@string/wired_mode_help" android:visibility="gone" />
+    <com.maichimod.prototype.MedioraButton android:id="@+id/simulate_call" style="@style/Widget.Maichi.SettingsAction" android:layout_width="match_parent" android:text="@string/simulate_call" />
 </LinearLayout>

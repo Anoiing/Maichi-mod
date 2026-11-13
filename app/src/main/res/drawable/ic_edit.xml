@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="16dp"
-    android:height="16dp"
-    android:viewportWidth="20"
-    android:viewportHeight="20">
-    <path
-        android:fillColor="#00000000"
-        android:pathData="M4,16 L4.8,12.4 L12.8,4.4 Q13.6,3.6 14.4,4.4 L15.6,5.6 Q16.4,6.4 15.6,7.2 L7.6,15.2 Z M11.4,5.8 L14.2,8.6"
-        android:strokeColor="@color/amber"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="1.5" />
+<!-- Lucide PencilLine，圆头细线适配触屏；授权见 assets/NOTICE-lucide.txt。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="14dp" android:height="14dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M13 21h8" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="m15 5 4 4" />
+    <path android:fillColor="#00000000" android:strokeColor="@color/text" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
 </vector>

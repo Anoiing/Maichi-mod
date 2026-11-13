@@ -40,11 +40,15 @@ class MainActivity : Activity() {
     private val binding = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             if (!started) return
-            service = (binder as IntercomService.LocalBinder).service
-            connection = service?.connection
-            subscription?.cancel()
-            subscription = connection?.observe(observer)
-            service?.refreshAvailability()
+            val owner = (binder as IntercomService.LocalBinder).service
+            owner.connection.checkDeadlines {
+                if (!started || !bound) return@checkDeadlines
+                service = owner
+                connection = owner.connection
+                subscription?.cancel()
+                subscription = owner.connection.observe(observer)
+                owner.refreshAvailability()
+            }
         }
         override fun onServiceDisconnected(name: ComponentName) {
             subscription?.cancel(); subscription = null
@@ -348,6 +352,7 @@ class MainActivity : Activity() {
             LinkStatus.SAMPLE_MISSING -> R.string.no_offline_samples
             LinkStatus.WIRED_CONNECTED -> R.string.wired_connected
             LinkStatus.WIRED_WAITING -> R.string.wired_disconnected
+            LinkStatus.WIRED_ADDRESS_PENDING -> R.string.wired_address_pending
             LinkStatus.WIRED_RECONNECTING -> R.string.wired_reconnecting
             LinkStatus.WIRED_NEEDS_IDS -> R.string.wired_needs_ids
             LinkStatus.WIRED_PROFILE_MISMATCH -> R.string.wired_profile_mismatch

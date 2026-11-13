@@ -34,6 +34,7 @@ internal interface TerminalObserver<Frame : Any> {
     fun onStateChanged(state: TerminalState)
     fun decodeJpeg(jpeg: ByteArray): Frame?
     fun onFrame(frame: Frame)
+    fun onPeerActivity() = Unit
     fun onStreamEnded(frames: Int, audioPackets: Int) = Unit
     fun onTransportFailure(failure: Exception) = Unit
 }
@@ -57,38 +58,44 @@ internal class TerminalSession<Frame : Any>(
     private var monitorPeriodic: Cancellation? = null
     private var elevatorTimeout: Cancellation? = null
     private var lastFrameTime = 0L
+    private var monitorDeadline: Long? = null
+    private var monitorLimitAt: Long? = null
+    private var elevatorDeadline: Long? = null
     private var videoFrames = 0
     private var audioPackets = 0
     private var closed = false
 
     fun openMonitor(selectedProfile: TerminalProfile = profile) {
+        checkDeadlines()
         if (closed || state.monitor == MonitorStatus.DISCOVERING || monitorPeer != null) return
         monitorProfile = selectedProfile
         val discoveryPending = state.elevator == ElevatorStatus.DISCOVERING && monitorProfile.peerId == profile.peerId
         setMonitor(MonitorStatus.DISCOVERING)
-        monitorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) {
-            endMonitor(MonitorStatus.TIMED_OUT, notifyPeer = false)
-        }
-        monitorLimit = scheduler.schedule(MONITOR_LIMIT_MS) {
-            endMonitor(MonitorStatus.ENDED, notifyPeer = true)
-        }
+        monitorDeadline = scheduler.nowMs + DISCOVERY_TIMEOUT_MS
+        monitorLimitAt = scheduler.nowMs + MONITOR_LIMIT_MS
+        monitorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) { checkDeadlines() }
+        monitorLimit = scheduler.schedule(MONITOR_LIMIT_MS) { checkDeadlines() }
         if (!discoveryPending) discover(monitorProfile)
     }
 
     fun closeMonitor() = endMonitor(MonitorStatus.IDLE, notifyPeer = true)
 
     fun callElevator() {
+        checkDeadlines()
         if (closed || state.elevator == ElevatorStatus.DISCOVERING || state.elevator == ElevatorStatus.WAITING) return
         val discoveryPending = state.monitor == MonitorStatus.DISCOVERING && monitorProfile.peerId == profile.peerId
         setElevator(ElevatorStatus.DISCOVERING)
-        elevatorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) { endElevator(ElevatorStatus.TIMED_OUT) }
+        elevatorDeadline = scheduler.nowMs + DISCOVERY_TIMEOUT_MS
+        elevatorTimeout = scheduler.schedule(DISCOVERY_TIMEOUT_MS) { checkDeadlines() }
         if (!discoveryPending) discover(profile)
     }
 
     fun receive(datagram: ReceivedDatagram) {
+        checkDeadlines()
         if (closed || datagram.sourcePort != datagram.localPort) return
         when (val packet = MaichiPackets.decode(datagram.localPort, datagram.payload)) {
             is MaichiPacket.DiscoveryReply -> {
+                if (acceptsDiscovery(datagram.source, packet, profile) || acceptsDiscovery(datagram.source, packet, monitorProfile)) observer.onPeerActivity()
                 if (state.monitor == MonitorStatus.DISCOVERING && acceptsDiscovery(datagram.source, packet, monitorProfile)) {
                     beginMonitor(datagram.source)
                 }
@@ -98,6 +105,7 @@ internal class TerminalSession<Frame : Any>(
             }
             is MaichiPacket.MonitorControl -> {
                 if (packet.type == MonitorCommand.CLOSE.type && isMonitorPeer(datagram.source, packet.identity)) {
+                    observer.onPeerActivity()
                     endMonitor(MonitorStatus.ENDED, notifyPeer = false)
                 }
             }
@@ -106,11 +114,13 @@ internal class TerminalSession<Frame : Any>(
             }
             is MaichiPacket.MonitorBusy -> {
                 if (state.monitor == MonitorStatus.CONNECTING && isMonitorPeer(datagram.source, packet.identity)) {
+                    observer.onPeerActivity()
                     endMonitor(MonitorStatus.BUSY, notifyPeer = false)
                 }
             }
             MaichiPacket.ElevatorReply -> {
                 if (state.elevator == ElevatorStatus.WAITING && datagram.source == elevatorPeer) {
+                    observer.onPeerActivity()
                     endElevator(ElevatorStatus.RESPONDED)
                 }
             }
@@ -148,10 +158,12 @@ internal class TerminalSession<Frame : Any>(
         monitorTimeout?.cancel()
         monitorPeer = peer
         lastFrameTime = scheduler.nowMs
+        monitorDeadline = lastFrameTime + VIDEO_TIMEOUT_MS
         setMonitor(MonitorStatus.CONNECTING)
         if (!sendMonitor(MonitorCommand.OPEN, peer)) return
         scheduleVideoTimeout(VIDEO_TIMEOUT_MS)
         monitorPeriodic = scheduler.schedule(MONITOR_PROBE_DELAY_MS) {
+            checkDeadlines()
             if (monitorPeer == peer && sendMonitor(MonitorCommand.PROBE, peer)) {
                 scheduleKeepAlive(peer, FIRST_KEEP_ALIVE_DELAY_MS)
             }
@@ -160,6 +172,7 @@ internal class TerminalSession<Frame : Any>(
 
     private fun scheduleKeepAlive(peer: Inet4Address, delayMs: Long) {
         monitorPeriodic = scheduler.schedule(delayMs) {
+            checkDeadlines()
             if (monitorPeer == peer && sendMonitor(MonitorCommand.KEEP_ALIVE, peer)) {
                 scheduleKeepAlive(peer, KEEP_ALIVE_PERIOD_MS)
             }
@@ -168,6 +181,8 @@ internal class TerminalSession<Frame : Any>(
 
     private fun scheduleVideoTimeout(delayMs: Long) {
         monitorTimeout = scheduler.schedule(delayMs) {
+            checkDeadlines()
+            if (monitorPeer == null) return@schedule
             val remaining = VIDEO_TIMEOUT_MS - (scheduler.nowMs - lastFrameTime)
             if (remaining <= 0) endMonitor(MonitorStatus.TIMED_OUT, notifyPeer = true)
             else scheduleVideoTimeout(remaining)
@@ -175,12 +190,14 @@ internal class TerminalSession<Frame : Any>(
     }
 
     private fun receiveMedia(fragment: MediaFragment) {
+        observer.onPeerActivity()
         if (fragment.kind == MediaFragment.AUDIO) {
             audioPackets++
             return
         }
         val frame = jpegAssembler.accept(fragment, scheduler.nowMs, observer::decodeJpeg) ?: return
         lastFrameTime = scheduler.nowMs
+        monitorDeadline = lastFrameTime + VIDEO_TIMEOUT_MS
         videoFrames++
         setMonitor(MonitorStatus.VIEWING)
         observer.onFrame(frame)
@@ -191,6 +208,7 @@ internal class TerminalSession<Frame : Any>(
             identity.indoorAddress == monitorProfile.localAddress && identity.indoorId == monitorProfile.indoorId
 
     private fun endMonitor(status: MonitorStatus, notifyPeer: Boolean) {
+        monitorDeadline = null; monitorLimitAt = null
         val peer = monitorPeer
         monitorPeer = null
         monitorTimeout?.cancel()
@@ -211,16 +229,28 @@ internal class TerminalSession<Frame : Any>(
         elevatorTimeout?.cancel()
         elevatorPeer = peer
         setElevator(ElevatorStatus.WAITING)
+        elevatorDeadline = scheduler.nowMs + ELEVATOR_TIMEOUT_MS
         if (send(MaichiPackets.SESSION_PORT, peer, MaichiPackets.encodeElevator(profile.indoorId))) {
-            elevatorTimeout = scheduler.schedule(ELEVATOR_TIMEOUT_MS) { endElevator(ElevatorStatus.TIMED_OUT) }
+            elevatorTimeout = scheduler.schedule(ELEVATOR_TIMEOUT_MS) { checkDeadlines() }
         }
     }
 
     private fun endElevator(status: ElevatorStatus) {
+        elevatorDeadline = null
         elevatorPeer = null
         elevatorTimeout?.cancel()
         elevatorTimeout = null
         setElevator(status)
+    }
+
+    fun checkDeadlines() {
+        if (closed) return
+        val timeoutAt = monitorDeadline ?: Long.MAX_VALUE
+        val limitAt = monitorLimitAt ?: Long.MAX_VALUE
+        if (scheduler.nowMs >= minOf(timeoutAt, limitAt)) {
+            endMonitor(if (limitAt < timeoutAt) MonitorStatus.ENDED else MonitorStatus.TIMED_OUT, notifyPeer = monitorPeer != null)
+        }
+        elevatorDeadline?.let { if (scheduler.nowMs >= it) endElevator(ElevatorStatus.TIMED_OUT) }
     }
 
     private fun sendMonitor(command: MonitorCommand, peer: Inet4Address): Boolean =

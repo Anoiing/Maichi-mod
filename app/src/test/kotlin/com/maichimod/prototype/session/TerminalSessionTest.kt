@@ -15,6 +15,23 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TerminalSessionTest {
+    @Test fun sleepingPastDiscoveryDeadlineDoesNotSendMonitorOpen() {
+        session.openMonitor()
+        clock.sleep(2_000)
+        session.receive(discovery())
+        assertEquals(MonitorStatus.TIMED_OUT, session.state.monitor)
+        assertEquals(1, transport.sent.size)
+    }
+
+    @Test fun sleepingPastElevatorReplyDeadlineCannotReportResponded() {
+        session.callElevator()
+        session.receive(discovery())
+        clock.sleep(3_000)
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        assertEquals(ElevatorStatus.TIMED_OUT, session.state.elevator)
+        assertEquals(2, transport.sent.size)
+    }
+
     private val clock = TestScheduler()
     private val transport = RecordingTransport()
     private val frames = mutableListOf<ByteArray>()
@@ -347,6 +364,8 @@ class TerminalSessionTest {
         private val jobs = mutableListOf<Job>()
         override var nowMs = 0L
             private set
+
+        fun sleep(ms: Long) { nowMs += ms }
 
         override fun schedule(delayMs: Long, action: () -> Unit): Cancellation {
             val job = Job(nowMs + delayMs, action)

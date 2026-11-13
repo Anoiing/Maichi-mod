@@ -7,6 +7,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class IncomingCallSessionTest {
+    @Test fun sleepingPastIdleDeadlineRejectsAnswerAndLatePackets() {
+        session.receive(ring())
+        clock.nowMs = 8_000
+        session.answer()
+        session.receive(ring())
+        assertEquals(CallStatus.TIMED_OUT, session.status)
+        assertFalse(sent.any { it.second[10].toInt() == 5 })
+    }
+
+    @Test fun sleepingPastRingDeadlineCannotAnswerAfterRecentActivity() {
+        session.receive(ring())
+        repeat(59) { clock.advance(1_000); session.receive(ring()) }
+        clock.nowMs = 60_000
+        session.answer()
+        assertEquals(CallStatus.TIMED_OUT, session.status)
+    }
+
+    @Test fun sleepHonorsEarlierUnlockHangUpBeforeIdleTimeout() {
+        session.receive(ring())
+        assertEquals(UnlockResult.SENT, session.unlock(autoHangUp = true))
+        clock.nowMs = 9_000
+        assertEquals(UnlockResult.REJECTED, session.unlock())
+        assertEquals(CallStatus.ENDED, session.status)
+        assertTrue(session.endedLocally)
+    }
+
     private val clock = Clock()
     private val sent = mutableListOf<Pair<Int, ByteArray>>()
     private val frames = mutableListOf<ByteArray>()
@@ -48,14 +74,14 @@ class IncomingCallSessionTest {
         assertEquals(1, sent.count { it.second[10].toInt() == 5 })
         session.receive(rx(10000, CallPackets.encodeAudio(DEMO_PROFILE, DEMO_PEER_IP, 2, ByteArray(512))))
         assertEquals(1, audio.size)
-        assertTrue(session.unlock())
+        assertEquals(UnlockResult.SENT, session.unlock())
         assertEquals(6, sent.last().second[10].toInt())
         assertEquals(CallStatus.ANSWERED, session.status)
         session.hangUp()
         val count = sent.size
         clock.advance(60_000)
         session.sendAudio(ByteArray(512))
-        assertFalse(session.unlock())
+        assertEquals(UnlockResult.REJECTED, session.unlock())
         assertEquals(count, sent.size)
         assertEquals(CallStatus.ENDED, session.status)
     }
@@ -94,7 +120,7 @@ class IncomingCallSessionTest {
 
     @Test fun unlockCanHangUpExactlyThreeSecondsAfterSending() {
         session.receive(ring())
-        assertTrue(session.unlock(autoHangUp = true))
+        assertEquals(UnlockResult.SENT, session.unlock(autoHangUp = true))
         clock.advance(2_999)
         assertEquals(CallStatus.RINGING, session.status)
         assertEquals(0, closeCount())
@@ -108,7 +134,7 @@ class IncomingCallSessionTest {
 
     @Test fun disabledAutoHangUpKeepsTheCallForManualHangUp() {
         session.receive(ring()); session.answer()
-        assertTrue(session.unlock(autoHangUp = false))
+        assertEquals(UnlockResult.SENT, session.unlock(autoHangUp = false))
         clock.advance(4_000)
         assertEquals(CallStatus.ANSWERED, session.status)
         assertEquals(0, closeCount())
@@ -161,7 +187,7 @@ class IncomingCallSessionTest {
     @Test fun failedUnlockDoesNotStartAnAutomaticHangUp() {
         session.receive(ring())
         failure = java.io.IOException("test failure")
-        assertFalse(session.unlock(autoHangUp = true))
+        assertEquals(UnlockResult.UNCONFIRMED, session.unlock(autoHangUp = true))
         clock.advance(3_000)
         assertEquals(CallStatus.DISCONNECTED, session.status)
         assertEquals(0, closeCount())
@@ -184,7 +210,7 @@ class IncomingCallSessionTest {
         assertEquals(CallStatus.IDLE, session.status)
         session.receive(ring())
         failure = java.io.IOException("test failure")
-        assertFalse(session.unlock())
+        assertEquals(UnlockResult.UNCONFIRMED, session.unlock())
         clock.advance(20_000)
         assertEquals(1, sent.count { it.second[10].toInt() == 6 })
         assertEquals(CallStatus.DISCONNECTED, session.status)

@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
         <package android:name="com.xiaomi.smarthome" />
@@ -23,6 +25,13 @@
         android:label="@string/app_name"
         android:supportsRtl="false"
         android:theme="@style/Theme.Maichi">
+        <receiver android:name=".StartupReceiver" android:exported="false" android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".IntercomService" android:exported="false"
             android:directBootAware="true" android:foregroundServiceType="connectedDevice|microphone" />
         <activity android:name=".IncomingCallActivity" android:exported="false" android:directBootAware="true"

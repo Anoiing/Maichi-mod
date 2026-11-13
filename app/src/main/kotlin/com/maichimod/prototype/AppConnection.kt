@@ -15,6 +15,7 @@ import com.maichimod.prototype.session.Cancellation
 import com.maichimod.prototype.session.ElevatorStatus
 import com.maichimod.prototype.session.MonitorStatus
 import com.maichimod.prototype.session.SessionScheduler
+import com.maichimod.prototype.session.UnlockResult
 import com.maichimod.prototype.session.TerminalObserver
 import com.maichimod.prototype.session.TerminalSession
 import com.maichimod.prototype.session.TerminalState
@@ -25,6 +26,7 @@ import com.maichimod.prototype.transport.CaptureFixtures
 import com.maichimod.prototype.transport.CaptureRow
 import com.maichimod.prototype.transport.DatagramTransport
 import com.maichimod.prototype.transport.EthernetLinks
+import com.maichimod.prototype.transport.EthernetState
 import com.maichimod.prototype.transport.EthernetTransport
 import com.maichimod.prototype.transport.FixtureTransport
 import com.maichimod.prototype.transport.ReceivedDatagram
@@ -39,13 +41,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 internal enum class LinkStatus {
-    SAMPLE, SAMPLE_MISSING, WIRED_WAITING, WIRED_NEEDS_IDS, WIRED_PROFILE_MISMATCH,
+    SAMPLE, SAMPLE_MISSING, WIRED_WAITING, WIRED_ADDRESS_PENDING, WIRED_NEEDS_IDS, WIRED_PROFILE_MISMATCH,
     WIRED_CONNECTED, WIRED_RECONNECTING, WIRED_ERROR, RECEPTION_BLOCKED
 }
 
 internal data class CallKey(val runId: String, val sequence: Int)
 
-internal enum class UnlockResult { SENT, REJECTED, UNCONFIRMED }
 internal enum class CallEndReason { LOCAL, REMOTE, TIMED_OUT, CONNECTION_LOST }
 internal enum class VideoHealth { INACTIVE, WAITING, MISSING, AVAILABLE, STALLED }
 
@@ -72,6 +73,9 @@ internal data class IntercomState(
     val video: VideoHealth = VideoHealth.INACTIVE,
     val callEndReason: CallEndReason? = null,
     val callEndedAtMs: Long? = null,
+    val retryAttempt: Int = 0,
+    val retryAtMs: Long? = null,
+    val externalPower: Boolean? = null,
 
 ) {
     val ready: Boolean get() = enabled && (link == LinkStatus.WIRED_CONNECTED || link == LinkStatus.SAMPLE)
@@ -92,7 +96,15 @@ internal class AppConnection(
     context: Context,
     private val openEthernet: (WiredLink, (ReceivedDatagram) -> Unit, (IOException) -> Unit) -> DatagramTransport =
         ::EthernetTransport,
-    private val openLinks: (Context, Handler, Inet4Address?, (WiredLink?) -> Unit) -> Closeable = ::EthernetLinks,
+    private val openLinks: (Context, Handler, Inet4Address?, (EthernetState) -> Unit) -> Closeable = ::EthernetLinks,
+    private val createScheduler: (Handler) -> SessionScheduler = { handler -> object : SessionScheduler {
+        override val nowMs: Long get() = SystemClock.elapsedRealtime()
+        override fun schedule(delayMs: Long, action: () -> Unit): Cancellation {
+            val callback = Runnable(action)
+            handler.postDelayed(callback, delayMs)
+            return Cancellation { handler.removeCallbacks(callback) }
+        }
+    } },
 ) : Closeable {
     private data class PendingFrame(val token: Int, val socketToken: Int, val monitorToken: Int, val bitmap: Bitmap)
 
@@ -106,6 +118,7 @@ internal class AppConnection(
     private var running = false
 
     fun observe(observer: IntercomObserver): Cancellation {
+        checkDeadlines()
         observers.add(observer)
         val initial = {
             if (observer in observers) {
@@ -126,7 +139,21 @@ internal class AppConnection(
         loaded: Boolean = false, configurationError: Boolean = false, issue: String? = null) = IntercomState(
         options = options, enabled = enabled, configurationLoaded = loaded, configurationError = configurationError, issue = issue,
         notificationsAllowed = currentState.notificationsAllowed, fullScreenAllowed = currentState.fullScreenAllowed,
-        ringerMuted = currentState.ringerMuted)
+        ringerMuted = currentState.ringerMuted, externalPower = currentState.externalPower)
+
+    fun updateExternalPower(connected: Boolean) {
+        main.post { if (!closed.get() && currentState.externalPower != connected) updateState(currentState.copy(externalPower = connected)) }
+    }
+
+    fun checkDeadlines(onChecked: (() -> Unit)? = null) {
+        worker.post {
+            if (closed.get()) return@post
+            session?.checkDeadlines()
+            calls?.checkDeadlines()
+            watchCallVideo(generation.get(), socketGeneration.get(), callGeneration.get())
+            if (onChecked != null) main.post { if (!closed.get()) onChecked() }
+        }
+    }
 
     fun updatePresentationCapabilities(notifications: Boolean, fullScreen: Boolean, muted: Boolean) {
         main.post {
@@ -206,6 +233,7 @@ internal class AppConnection(
     private val callGeneration = AtomicInteger()
     @Volatile private var captureForCall: CallKey? = null
     private val unlockInFlight = AtomicBoolean()
+    private val retryQueued = AtomicBoolean()
     private var lastUnlockAt: Long? = null
     private data class PendingCallFrame(val token: Int, val socket: Int, val call: Int, val bitmap: Bitmap)
     private val pendingCallFrame = AtomicReference<PendingCallFrame?>()
@@ -220,20 +248,15 @@ internal class AppConnection(
             if (isCurrent(token, socketToken) && monitorToken == monitorGeneration.get()) onFrame(bitmap)
         }
     }
-    private val scheduler = object : SessionScheduler {
-        override val nowMs: Long get() = SystemClock.elapsedRealtime()
-
-        override fun schedule(delayMs: Long, action: () -> Unit): Cancellation {
-            val callback = Runnable(action)
-            worker.postDelayed(callback, delayMs)
-            return Cancellation { worker.removeCallbacks(callback) }
-        }
-    }
+    private val scheduler = createScheduler(worker)
 
     private var links: Closeable? = null
     private var session: TerminalSession<Bitmap>? = null
     private var calls: IncomingCallSession<Bitmap>? = null
     private var wiredRetry: Cancellation? = null
+    private var wiredStable: Cancellation? = null
+    private var addressWait: Cancellation? = null
+    private var wiredFailures = 0
     private var videoWatch: Cancellation? = null
     private var videoStartedAt = 0L
     private var lastVideoAt: Long? = null
@@ -316,11 +339,13 @@ internal class AppConnection(
     }
 
     fun retry() {
-        worker.post {
+        if (!retryQueued.compareAndSet(false, true)) return
+        if (!worker.post {
             if (!closed.get() && running && calls?.status != CallStatus.RINGING && calls?.status != CallStatus.ANSWERED) {
                 restart(activeOptions)
             }
-        }
+            main.post { retryQueued.set(false) }
+        }) retryQueued.set(false)
     }
 
     private fun restart(options: ConnectionOptions) {
@@ -328,6 +353,7 @@ internal class AppConnection(
         release()
         running = true
         activeOptions = options
+        wiredFailures = 0
         val socketToken = socketGeneration.get()
         publish(token, socketToken) { updateState(freshState(options = options)) }
         if (options.wired) startWired(options, token) else startReplay(options, token)
@@ -419,6 +445,7 @@ internal class AppConnection(
         main.postDelayed(waiting, 1000)
         val token = generation.get(); val socket = socketGeneration.get()
         val queued = worker.post {
+            calls?.checkDeadlines()
             val now = SystemClock.elapsedRealtime()
             val result = if (!isCurrent(token, socket) || !isCurrentCall(key) || closed.get() ||
                 currentState.callEnding || calls?.status !in listOf(CallStatus.RINGING, CallStatus.ANSWERED) || now - requestedAt >= 1000 ||
@@ -426,7 +453,7 @@ internal class AppConnection(
                 UnlockResult.REJECTED
             } else {
                 lastUnlockAt = now
-                if (calls?.unlock(autoHangUp) == true) UnlockResult.SENT else UnlockResult.UNCONFIRMED
+                calls?.unlock(autoHangUp) ?: UnlockResult.REJECTED
             }
             val readyAt = (lastUnlockAt ?: 0) + 1500
             main.post {
@@ -461,6 +488,7 @@ internal class AppConnection(
     private fun withCall(key: CallKey, allowEnding: Boolean = false, action: IncomingCallSession<Bitmap>.() -> Unit) {
         val token = generation.get(); val socket = socketGeneration.get()
         worker.post {
+            calls?.checkDeadlines()
             if (!closed.get() && (allowEnding || !currentState.callEnding) && isCurrent(token, socket) && isCurrentCall(key) &&
                 calls?.status in listOf(CallStatus.RINGING, CallStatus.ANSWERED)) calls?.action()
         }
@@ -475,7 +503,7 @@ internal class AppConnection(
         worker.post {
             release()
             running = false
-            main.post { updateState(currentState.copy(enabled = false, link = null, ethernet = null,
+            main.post { if (token == generation.get()) updateState(currentState.copy(enabled = false, link = null, ethernet = null,
                 terminal = TerminalState(), call = CallStatus.IDLE, callKey = null)) }
         }
     }
@@ -535,8 +563,8 @@ internal class AppConnection(
             onLink(if (options.hasTerminalIds) LinkStatus.WIRED_WAITING else LinkStatus.WIRED_NEEDS_IDS, null)
         }
         try {
-            links = openLinks(app, worker, options.preferredLocalIp) { link ->
-                if (token == generation.get()) selectWiredLink(options, token, link)
+            links = openLinks(app, worker, options.preferredLocalIp) { network ->
+                if (token == generation.get()) selectWiredLink(options, token, network)
             }
         } catch (failure: RuntimeException) {
             Log.w(TAG, "Unable to observe Ethernet", failure)
@@ -544,15 +572,22 @@ internal class AppConnection(
         }
     }
 
-    private fun selectWiredLink(options: ConnectionOptions, token: Int, link: WiredLink?) {
+    private fun selectWiredLink(options: ConnectionOptions, token: Int, network: EthernetState) {
+        val link = network.link
         val socketToken = retireSession()
         activeLink = link
         when {
             !options.hasTerminalIds -> publishWiredStatus(token, socketToken, LinkStatus.WIRED_NEEDS_IDS, link)
-            link == null -> publishWiredStatus(token, socketToken, LinkStatus.WIRED_WAITING, null)
+            link == null -> {
+                val status = if (network.present) LinkStatus.WIRED_ADDRESS_PENDING else LinkStatus.WIRED_WAITING
+                publishWiredStatus(token, socketToken, status, null)
+                if (network.present) addressWait = scheduler.schedule(10_000) {
+                    publish(token, socketToken) { if (currentState.link == LinkStatus.WIRED_ADDRESS_PENDING) updateState(currentState.copy(issue = app.getString(R.string.wired_address_delayed))) }
+                }
+            }
             !options.matchesEthernet(link.address, link.prefixLength) ->
                 publishWiredStatus(token, socketToken, LinkStatus.WIRED_PROFILE_MISMATCH, link)
-            else -> bindWiredSession(options, link, token, socketToken, canRetry = true)
+            else -> bindWiredSession(options, link, token, socketToken)
         }
     }
 
@@ -561,11 +596,10 @@ internal class AppConnection(
         link: WiredLink,
         token: Int,
         socketToken: Int,
-        canRetry: Boolean,
     ) {
-        var canRecover = canRetry
+        publishWiredStatus(token, socketToken, LinkStatus.WIRED_RECONNECTING, link)
         val onTransportFailure: (Exception) -> Unit = { failure ->
-            recoverWiredSession(options, link, token, socketToken, failure, canRecover)
+            recoverWiredSession(options, link, token, socketToken, failure)
         }
         try {
             val profile = options.terminalProfile(link.address, link.prefixLength)
@@ -576,11 +610,17 @@ internal class AppConnection(
             }, { failure ->
                 worker.post { onTransportFailure(failure) }
             })
-            installSession(profile, transport, token, socketToken, onTransportFailure) { canRecover = true }
+            installSession(profile, transport, token, socketToken, onTransportFailure) {
+                wiredFailures = 0
+                wiredStable?.cancel(); wiredStable = null
+            }
+            wiredStable = scheduler.schedule(60_000) {
+                if (isCurrent(token, socketToken)) { wiredFailures = 0; wiredStable = null }
+            }
             publishWiredStatus(token, socketToken, LinkStatus.WIRED_CONNECTED, link)
         } catch (failure: Exception) {
             if (failure !is IOException && failure !is SecurityException && failure !is IllegalArgumentException) throw failure
-            recoverWiredSession(options, link, token, socketToken, failure, canRetry)
+            recoverWiredSession(options, link, token, socketToken, failure)
         }
     }
 
@@ -590,18 +630,22 @@ internal class AppConnection(
         token: Int,
         socketToken: Int,
         failure: Exception,
-        canRetry: Boolean,
     ) {
         if (!isCurrent(token, socketToken)) return
         Log.w(TAG, "Wired UDP connection failed", failure)
         val retryToken = retireSession()
-        val status = if (canRetry) LinkStatus.WIRED_RECONNECTING else LinkStatus.WIRED_ERROR
-        publishWiredStatus(token, retryToken, status, link)
-        if (canRetry) {
-            wiredRetry = scheduler.schedule(WIRED_RETRY_DELAY_MS) {
+        if (failure !is IOException) {
+            publishWiredStatus(token, retryToken, LinkStatus.WIRED_ERROR, link)
+        } else {
+            val delay = WIRED_RETRY_DELAYS[wiredFailures.coerceAtMost(WIRED_RETRY_DELAYS.lastIndex)]
+            wiredFailures = (wiredFailures + 1).coerceAtMost(WIRED_RETRY_DELAYS.size)
+            val attempt = wiredFailures
+            val retryAt = scheduler.nowMs + delay
+            publishWiredStatus(token, retryToken, LinkStatus.WIRED_RECONNECTING, link, attempt, retryAt)
+            wiredRetry = scheduler.schedule(delay) {
                 if (isCurrent(token, retryToken)) {
                     wiredRetry = null
-                    bindWiredSession(options, link, token, socketGeneration.incrementAndGet(), canRetry = false)
+                    bindWiredSession(options, link, token, socketGeneration.incrementAndGet())
                 }
             }
         }
@@ -624,10 +668,8 @@ internal class AppConnection(
             override fun close() = transport.close()
         }
         val observer = object : TerminalObserver<Bitmap> {
+            override fun onPeerActivity() = onOperational()
             override fun onStateChanged(state: TerminalState) {
-                if (state.monitor == MonitorStatus.VIEWING || state.elevator == ElevatorStatus.RESPONDED) {
-                    onOperational()
-                }
                 Log.i(TAG, "monitor=${state.monitor} elevator=${state.elevator}")
                 val monitorToken = activeMonitorToken
                 publish(token, socketToken) {
@@ -660,6 +702,7 @@ internal class AppConnection(
         }
         session = TerminalSession(profile, logged, sessionScheduler, observer)
         calls = IncomingCallSession(profile, logged, sessionScheduler, object : CallObserver<Bitmap> {
+            override fun onPeerActivity() = onOperational()
             override fun onStateChanged(status: CallStatus) {
                 if (status == CallStatus.RINGING) {
                     callGeneration.incrementAndGet()
@@ -720,12 +763,15 @@ internal class AppConnection(
         main.post { if (isCurrent(token, socketToken)) action() }
     }
 
-    private fun publishWiredStatus(token: Int, socketToken: Int, status: LinkStatus, link: WiredLink?) {
+    private fun publishWiredStatus(token: Int, socketToken: Int, status: LinkStatus, link: WiredLink?,
+        attempt: Int = 0, retryAt: Long? = null) {
         publish(token, socketToken) {
             onState(TerminalState())
             if (currentState.inCall) onCall(CallStatus.DISCONNECTED, currentState.callKey?.sequence ?: callGeneration.get())
             else if (currentState.call == CallStatus.IDLE) onCall(CallStatus.IDLE, callGeneration.get())
             onLink(status, link)
+            updateState(currentState.copy(retryAttempt = attempt, retryAtMs = retryAt,
+                issue = if (currentState.issue == app.getString(R.string.wired_address_delayed)) null else currentState.issue))
         }
     }
 
@@ -743,6 +789,8 @@ internal class AppConnection(
         callGeneration.incrementAndGet()
         wiredRetry?.cancel()
         wiredRetry = null
+        wiredStable?.cancel(); wiredStable = null
+        addressWait?.cancel(); addressWait = null
         videoWatch?.cancel(); videoWatch = null
         lastVideoAt = null
         pendingFrame.set(null)
@@ -766,6 +814,6 @@ internal class AppConnection(
 
     companion object {
         private const val TAG = "Maichi"
-        private const val WIRED_RETRY_DELAY_MS = 500L
+        private val WIRED_RETRY_DELAYS = longArrayOf(500, 1000, 2000, 5000, 10000, 30000)
     }
 }

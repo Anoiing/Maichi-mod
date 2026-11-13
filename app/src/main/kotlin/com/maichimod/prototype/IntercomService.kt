@@ -8,6 +8,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -15,6 +17,11 @@ import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
+import android.os.BatteryManager
 import com.maichimod.prototype.session.CallStatus
 import com.maichimod.prototype.session.Cancellation
 
@@ -30,6 +37,21 @@ class IntercomService : Service() {
     private var lastNotification: String? = null
     private var callNoticeKey: CallKey? = null
     private var callNoticeFingerprint: String? = null
+    private lateinit var cpuLock: PowerManager.WakeLock
+    private val powerHandler = Handler(Looper.getMainLooper())
+    private var renewCpuAt = 0L
+    private val cpuCheck = Runnable { connection.checkDeadlines(); syncCpuLease(connection.currentState) }
+    private val deviceEvents = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_BATTERY_CHANGED) {
+                connection.updateExternalPower(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0)
+            } else if (intent.action == Intent.ACTION_USER_UNLOCKED) {
+                connection.restore()
+            }
+            connection.checkDeadlines()
+            syncCpuLease(connection.currentState)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -44,8 +66,10 @@ class IntercomService : Service() {
             })
         }
         connection = AppConnection(this)
+        cpuLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:reception").apply { setReferenceCounted(false) }
         subscription = connection.observe(object : IntercomObserver {
             override fun onState(state: IntercomState) {
+                syncCpuLease(state)
                 // The microphone lease belongs to the answered call, including a user-requested audio retry.
                 if (microphoneForKey != null && (state.callKey != microphoneForKey || !state.inCall)) {
                     microphoneForKey = null
@@ -66,6 +90,12 @@ class IntercomService : Service() {
                 }
             }
         })
+        val events = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED); addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_USER_UNLOCKED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(deviceEvents, events, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(deviceEvents, events)
         refreshAvailability()
     }
 
@@ -82,6 +112,24 @@ class IntercomService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
     // No onUnbind cleanup: calls must arrive with no bound UI.
+
+    internal fun syncCpuLease(state: IntercomState): Boolean {
+        powerHandler.removeCallbacks(cpuCheck)
+        val needed = state.inCall || (state.enabled && state.options.wired && state.ethernet != null &&
+            state.link in listOf(LinkStatus.WIRED_CONNECTED, LinkStatus.WIRED_RECONNECTING))
+        if (needed) {
+            val now = SystemClock.elapsedRealtime()
+            if (!cpuLock.isHeld || now >= renewCpuAt) {
+                cpuLock.acquire(10 * 60_000L)
+                renewCpuAt = now + 60_000
+            }
+            powerHandler.postDelayed(cpuCheck, 60_000)
+        } else {
+            if (cpuLock.isHeld) cpuLock.release()
+            renewCpuAt = 0
+        }
+        return cpuLock.isHeld
+    }
 
     internal fun refreshAvailability() {
         val manager = getSystemService(NotificationManager::class.java)
@@ -139,7 +187,7 @@ class IntercomService : Service() {
         true
     } catch (_: RuntimeException) { false }
 
-    private fun fingerprint(state: IntercomState) = listOf(state.enabled, state.configurationLoaded,
+    private fun fingerprint(state: IntercomState) = listOf(state.enabled, state.configurationLoaded, state.link, state.retryAtMs,
         state.callKey, state.call, state.callEnding, state.issue, state.notificationsAllowed, state.fullScreenAllowed).joinToString("|")
 
     private fun statusText(state: IntercomState): String = state.issue ?: getString(when {
@@ -206,6 +254,9 @@ class IntercomService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(deviceEvents)
+        powerHandler.removeCallbacks(cpuCheck)
+        if (cpuLock.isHeld) cpuLock.release()
         subscription?.cancel(); cancelCallNotice(); connection.close()
         microphoneForKey = null; foreground = false
         super.onDestroy()

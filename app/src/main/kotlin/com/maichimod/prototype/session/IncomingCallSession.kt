@@ -14,12 +14,14 @@ import java.io.IOException
 import java.net.Inet4Address
 
 internal enum class CallStatus { IDLE, RINGING, ANSWERED, ENDED, TIMED_OUT, DISCONNECTED }
+internal enum class UnlockResult { SENT, REJECTED, UNCONFIRMED }
 
 internal interface CallObserver<Frame : Any> {
     fun onStateChanged(status: CallStatus)
     fun decodeJpeg(jpeg: ByteArray): Frame?
     fun onFrame(frame: Frame)
     fun onAudio(pcm: ByteArray)
+    fun onPeerActivity() = Unit
     fun onTransportFailure(failure: Exception) = Unit
 }
 
@@ -38,6 +40,8 @@ internal class IncomingCallSession<Frame : Any>(
     private var queriedBy: Inet4Address? = null
     private var queriedAt = 0L
     private var lastActivity = 0L
+    private var ringDeadline: Long? = null
+    private var unlockDeadline: Long? = null
     private var periodic: Cancellation? = null
     private var timeout: Cancellation? = null
     private var ringLimit: Cancellation? = null
@@ -48,19 +52,23 @@ internal class IncomingCallSession<Frame : Any>(
     private val assembler = JpegAssembler()
 
     fun receive(datagram: ReceivedDatagram) {
+        checkDeadlines()
         if (closed || datagram.localPort != datagram.sourcePort || !allowed(datagram.source)) return
         when (val packet = CallPackets.decode(datagram.localPort, datagram.payload)) {
             is CallPacket.Query -> if (packet.indoorId == profile.indoorId) {
+                observer.onPeerActivity()
                 queriedBy = datagram.source; queriedAt = scheduler.nowMs
                 send(10008, datagram.source, CallPackets.encodeDiscoveryReply(profile.indoorId))
             }
             CallPacket.Lookup -> if (datagram.source == profile.expectedPeerAddress ||
                 (datagram.source == queriedBy && scheduler.nowMs - queriedAt <= 5_000)
             ) {
+                observer.onPeerActivity()
                 if (send(10000, datagram.source, CallPackets.encodeRoster(profile))) requireLookup = false
             }
             is CallPacket.Signal -> {
                 if (!matches(datagram.source, packet.identity)) return
+                observer.onPeerActivity()
                 if (packet.type == 1) {
                     if (peer != null && peer != datagram.source) return
                     if (peer == null && requireLookup) return
@@ -70,10 +78,9 @@ internal class IncomingCallSession<Frame : Any>(
                         endedLocally = false
                         setStatus(CallStatus.RINGING)
                         lastActivity = scheduler.nowMs
+                        ringDeadline = scheduler.nowMs + 60_000
                         armTimeout(8_000)
-                        ringLimit = scheduler.schedule(60_000) {
-                            if (status == CallStatus.RINGING) end(CallStatus.TIMED_OUT, true)
-                        }
+                        ringLimit = scheduler.schedule(60_000) { checkDeadlines() }
                         keepAlive()
                     }
                     lastActivity = scheduler.nowMs
@@ -84,6 +91,7 @@ internal class IncomingCallSession<Frame : Any>(
                 }
             }
             is CallPacket.Media -> if (peer == datagram.source && matches(datagram.source, packet.identity)) {
+                observer.onPeerActivity()
                 lastActivity = scheduler.nowMs
                 val fragment = packet.fragment
                 if (fragment.kind == MediaFragment.AUDIO) {
@@ -99,21 +107,27 @@ internal class IncomingCallSession<Frame : Any>(
     }
 
     fun answer() {
+        checkDeadlines()
         if (!closed && status == CallStatus.RINGING && sendSignal(CallCommand.ANSWER)) {
             ringLimit?.cancel(); ringLimit = null
+            ringDeadline = null
             setStatus(CallStatus.ANSWERED)
         }
     }
 
-    fun unlock(autoHangUp: Boolean = false): Boolean {
-        if (closed || peer == null || !sendSignal(CallCommand.UNLOCK)) return false
+    fun unlock(autoHangUp: Boolean = false): UnlockResult {
+        checkDeadlines()
+        if (closed || peer == null) return UnlockResult.REJECTED
+        if (!sendSignal(CallCommand.UNLOCK)) return UnlockResult.UNCONFIRMED
         unlockHangUp?.cancel()
-        unlockHangUp = if (autoHangUp) scheduler.schedule(3_000) { hangUp() } else null
-        return true
+        unlockDeadline = if (autoHangUp) scheduler.nowMs + 3_000 else null
+        unlockHangUp = if (autoHangUp) scheduler.schedule(3_000) { checkDeadlines() } else null
+        return UnlockResult.SENT
     }
-    fun hangUp() = end(CallStatus.ENDED, true)
+    fun hangUp() { checkDeadlines(); end(CallStatus.ENDED, true) }
 
     fun sendAudio(pcm: ByteArray) {
+        checkDeadlines()
         val target = peer ?: return
         if (closed || status != CallStatus.ANSWERED || pcm.size != 512) return
         sequence = (sequence + 1) and 0xffff
@@ -140,14 +154,26 @@ internal class IncomingCallSession<Frame : Any>(
 
     private fun keepAlive() {
         periodic = scheduler.schedule(110) {
+            checkDeadlines()
             if (peer != null && sendSignal(CallCommand.KEEP_ALIVE)) keepAlive()
         }
     }
 
     private fun armTimeout(delay: Long) {
         timeout = scheduler.schedule(delay) {
+            checkDeadlines()
+            if (peer == null) return@schedule
             val remaining = 8_000 - (scheduler.nowMs - lastActivity)
             if (remaining <= 0) end(CallStatus.TIMED_OUT, true) else armTimeout(remaining)
+        }
+    }
+
+    fun checkDeadlines() {
+        if (closed || peer == null) return
+        val timeoutAt = minOf(lastActivity + 8_000, ringDeadline ?: Long.MAX_VALUE)
+        val unlockAt = unlockDeadline ?: Long.MAX_VALUE
+        if (scheduler.nowMs >= minOf(timeoutAt, unlockAt)) {
+            end(if (unlockAt <= timeoutAt) CallStatus.ENDED else CallStatus.TIMED_OUT, true)
         }
     }
 
@@ -160,6 +186,7 @@ internal class IncomingCallSession<Frame : Any>(
         timeout?.cancel(); timeout = null
         ringLimit?.cancel(); ringLimit = null
         unlockHangUp?.cancel(); unlockHangUp = null
+        ringDeadline = null; unlockDeadline = null
         assembler.clear()
         if (target != null || next == CallStatus.DISCONNECTED) setStatus(next)
         if (target != null && notify && !closed) send(10000, target, CallPackets.encodeSignal(CallCommand.CLOSE, profile, target))

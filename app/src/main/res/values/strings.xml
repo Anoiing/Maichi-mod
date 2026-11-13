@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="wired_address_pending">网口已连接，正在等待 IPv4 地址</string>
+    <string name="wired_address_delayed">网口已连接但尚未取得有效地址，请检查平板有线网络的地址设置</string>
+    <string name="wired_retry_after">连接暂时中断，将在约 %1$d 秒后重试</string>
     <string name="hang_up_not_submitted">挂断请求未能提交，请从来电通知重试。</string>
     <string name="call_notification_channel">门禁来电</string>
     <string name="retry_call_audio">恢复语音</string>

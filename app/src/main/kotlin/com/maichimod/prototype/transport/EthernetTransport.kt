@@ -24,19 +24,29 @@ internal data class WiredLink(
     val gateway: Inet4Address?,
 )
 
+internal data class EthernetState(val link: WiredLink? = null, val present: Boolean = link != null)
+
 internal class EthernetLinks(
     context: Context,
     handler: Handler,
     private val preferredAddress: Inet4Address?,
-    private val onChange: (WiredLink?) -> Unit,
+    private val onChange: (EthernetState) -> Unit,
 ) : Closeable {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val available = linkedMapOf<Network, WiredLink>()
+    private val present = linkedSetOf<Network>()
     private var selected: WiredLink? = null
+    private var lastState = EthernetState()
     private var closed = false
     private val callback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (closed) return
+            present.add(network)
+            selectLink()
+        }
         override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
             if (closed) return
+            present.add(network)
             val ipv4Addresses = properties.linkAddresses.filter { linkAddress ->
                 val address = linkAddress.address
                 address is Inet4Address && !address.isAnyLocalAddress && !address.isLoopbackAddress &&
@@ -58,6 +68,7 @@ internal class EthernetLinks(
         override fun onLost(network: Network) {
             if (closed) return
             available.remove(network)
+            present.remove(network)
             selectLink()
         }
     }
@@ -76,9 +87,11 @@ internal class EthernetLinks(
     private fun selectLink() {
         val next = available.values.firstOrNull { it.address == preferredAddress }
             ?: selected?.let { available[it.network] } ?: available.values.firstOrNull()
-        if (next == selected) return
         selected = next
-        onChange(next)
+        val state = EthernetState(next, present.isNotEmpty())
+        if (state == lastState) return
+        lastState = state
+        onChange(state)
     }
 }
 

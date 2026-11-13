@@ -1,5 +1,7 @@
 package com.maichimod.prototype
 
+import com.maichimod.prototype.session.UnlockResult
+
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.maichimod.prototype.protocol.*

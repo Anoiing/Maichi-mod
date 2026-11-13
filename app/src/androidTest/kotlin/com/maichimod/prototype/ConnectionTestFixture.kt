@@ -114,7 +114,7 @@ internal class WiredIntercomFixture : Closeable {
             }
             override fun close() = Unit
         }
-    }, openLinks = { _, _, _, changed -> changed(testLink()); Closeable {} })
+    }, openLinks = { _, _, _, changed -> changed(com.maichimod.prototype.transport.EthernetState(testLink())); Closeable {} })
     init {
         val ready = CountDownLatch(1)
         val subscription = owner.observe(object : IntercomObserver {

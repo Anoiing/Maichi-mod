@@ -13,6 +13,25 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SettingsInteractionTest {
+    @Test fun networkRecoveryExplanationAndPermissionGuidanceAreVisibleTogether() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val page = activity.findViewById<android.view.View>(R.id.settings_page)
+                val settings = ConnectionSettingsView(page, { wiredTestOptions() }, { _, done -> done(false) }, {})
+                val message = activity.getString(R.string.wired_address_delayed)
+                val state = IntercomState(options = wiredTestOptions(), configurationLoaded = true,
+                    link = LinkStatus.WIRED_ADDRESS_PENDING, issue = message, notificationsAllowed = false)
+                settings.renderReception(state, true)
+                val hint = page.findViewById<android.widget.TextView>(R.id.reception_hint)
+                assertTrue(hint.text.toString().contains(message))
+                assertTrue(hint.text.toString().contains(activity.getString(R.string.call_notifications_blocked)))
+                settings.renderReception(state.copy(link = LinkStatus.WIRED_RECONNECTING, issue = null,
+                    retryAtMs = android.os.SystemClock.elapsedRealtime() + 5000), true)
+                assertTrue(hint.text.toString().contains(activity.getString(R.string.wired_retry_after, 5L)))
+            }
+        }
+    }
+
     @Before fun prepareIsolatedEmulator() {
         assumeTrue(android.os.Build.HARDWARE == "ranchu" || android.os.Build.HARDWARE == "goldfish")
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation

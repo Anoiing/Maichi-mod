@@ -170,6 +170,11 @@ internal class ConnectionSettingsView(
             !state.enabled -> context.getString(R.string.reception_disabled_help)
             state.link == LinkStatus.RECEPTION_BLOCKED -> state.issue ?: context.getString(R.string.reception_start_failed)
             else -> buildList {
+                if (state.link == LinkStatus.WIRED_ADDRESS_PENDING) state.issue?.let { add(it) }
+                if (state.link == LinkStatus.WIRED_RECONNECTING) state.retryAtMs?.let {
+                    val seconds = ((it - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0) + 999) / 1000
+                    add(context.getString(R.string.wired_retry_after, seconds))
+                }
                 if (!state.notificationsAllowed) add(context.getString(R.string.call_notifications_blocked))
                 else if (!state.fullScreenAllowed) add(context.getString(R.string.full_screen_blocked))
                 if (state.ringerMuted) add(context.getString(R.string.ringtone_muted))

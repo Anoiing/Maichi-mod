@@ -1,5 +1,7 @@
 package com.maichimod.prototype
 
+import com.maichimod.prototype.session.UnlockResult
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -53,15 +55,19 @@ class IncomingCallActivity : Activity() {
     private val binding = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             if (!started) return
-            service = (binder as IntercomService.LocalBinder).service
-            service?.refreshAvailability()
-            subscription?.cancel()
-            subscription = service?.connection?.observe(object : IntercomObserver {
-                override fun onState(updated: IntercomState) { state = updated; render() }
-                override fun onCallFrame(frame: android.graphics.Bitmap) {
-                    if (state.callKey == key && state.inCall) preview.setImageBitmap(frame)
-                }
-            })
+            val owner = (binder as IntercomService.LocalBinder).service
+            owner.connection.checkDeadlines {
+                if (!started || !bound) return@checkDeadlines
+                service = owner
+                owner.refreshAvailability()
+                subscription?.cancel()
+                subscription = owner.connection.observe(object : IntercomObserver {
+                    override fun onState(updated: IntercomState) { state = updated; render() }
+                    override fun onCallFrame(frame: android.graphics.Bitmap) {
+                        if (state.callKey == key && state.inCall) preview.setImageBitmap(frame)
+                    }
+                })
+            }
         }
         override fun onServiceDisconnected(name: ComponentName) {
             subscription?.cancel(); subscription = null; service = null

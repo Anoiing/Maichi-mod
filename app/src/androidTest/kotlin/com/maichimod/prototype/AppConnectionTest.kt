@@ -66,12 +66,12 @@ class AppConnectionTest {
             if (bindings.incrementAndGet() >= 3) retried.countDown()
             throw java.io.IOException("Injected bind failure")
         }, openLinks = { _, _, _, changed ->
-            changed(testLink())
+            changed(com.maichimod.prototype.transport.EthernetState(testLink()))
             java.io.Closeable { }
         })
         val sub = connection.observe(object : IntercomObserver {
             override fun onState(state: IntercomState) {
-                if (state.link == LinkStatus.WIRED_ERROR) failed.countDown()
+                if (state.link == LinkStatus.WIRED_RECONNECTING && state.retryAttempt >= 2) failed.countDown()
             }
         })
         try {

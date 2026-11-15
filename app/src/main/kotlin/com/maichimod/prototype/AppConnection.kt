@@ -417,7 +417,7 @@ internal class AppConnection(
         captureForCall = if (capture) key else null
         val token = generation.get(); val socket = socketGeneration.get()
         publish(token, socket) {
-            if (currentState.callKey == key && currentState.call == CallStatus.ANSWERED) {
+            if (currentState.callKey == key && currentState.call == CallStatus.ANSWERED && !currentState.callEnding) {
                 audio.start(activeOptions.wired && captureForCall == key) { sendCallAudio(it, key) }
             }
         }

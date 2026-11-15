@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -22,7 +23,7 @@ import java.util.Locale
 
 /** Owns only home information. It never changes reception, screen demand or user-interaction time. */
 internal class HomeInfoController(private val activity: Activity, private val dashboard: View,
-    private val settings: View, root: ViewGroup, onShowDashboard: () -> Unit) {
+    private val settings: View, root: ViewGroup, onShowDashboard: () -> Unit, restoredState: Bundle? = null) {
     private val store = HomeInfoStore(activity)
     private val readings = HomeReadings(store)
     private val handler = Handler(Looper.getMainLooper())
@@ -38,9 +39,9 @@ internal class HomeInfoController(private val activity: Activity, private val da
     private var weatherHost: HomeWidgetHost? = null
     private var cainiaoHost: HomeWidgetHost? = null
     private val weatherSpec = WidgetSpec("weather", ComponentName("com.huawei.android.totemweather",
-        "com.huawei.android.totemweather.widget.huaweiwidget.HuaweiWidgetWeatherProvider"), 0x6EA710, 6101, 720, 240, true)
+        "com.huawei.android.totemweather.widget.huaweiwidget.HuaweiWidgetWeatherProvider"), 0x6EA710, 720, 240, true)
     private val cainiaoSpec = WidgetSpec("cainiao", ComponentName("com.cainiao.wireless",
-        "com.cainiao.wireless.widget.widgetprovider.widget.LogisticsWidgetSmall"), 0x6CA110, 6102, 280, 180, false)
+        "com.cainiao.wireless.widget.widgetprovider.widget.LogisticsWidgetSmall"), 0x6CA110, 280, 180, false)
     private val tick = object : Runnable {
         override fun run() {
             if (!active || closed) return
@@ -58,11 +59,11 @@ internal class HomeInfoController(private val activity: Activity, private val da
         weatherHost = HomeWidgetHost(activity, weatherSpec, store, root, launch, { weatherStatus = it; render() }, { fields ->
             weatherHealthy = readings.acceptWeather(fields, Instant.now(), ZoneId.systemDefault())
             render()
-        })
+        }, restoredPendingId = restoredState?.getInt("weather.pending", -1))
         cainiaoHost = HomeWidgetHost(activity, cainiaoSpec, store, root, launch, { cainiaoStatus = it; render() }, { fields ->
             cainiaoHealthy = readings.acceptCainiao(fields, System.currentTimeMillis())
             render()
-        })
+        }, restoredPendingId = restoredState?.getInt("cainiao.pending", -1))
         runCatching { activity.packageManager.getApplicationIcon(cainiaoSpec.provider.packageName) }.getOrNull()?.let {
             dashboard.findViewById<ImageView>(R.id.cainiao_icon).setImageDrawable(it)
         }
@@ -131,6 +132,10 @@ internal class HomeInfoController(private val activity: Activity, private val da
         stop(); closed = true
         handler.removeCallbacksAndMessages(null)
         weatherHost?.close(); cainiaoHost?.close()
+    }
+    fun saveState() = Bundle().apply {
+        putInt("weather.pending", store.pendingId(weatherSpec.key))
+        putInt("cainiao.pending", store.pendingId(cainiaoSpec.key))
     }
     fun onActivityResult(request: Int, result: Int, data: Intent?): Boolean {
         val handled = weatherHost?.onActivityResult(request, result, data) == true || cainiaoHost?.onActivityResult(request, result, data) == true

@@ -11,7 +11,9 @@ internal data class CainiaoCounts(val awaitingPickup: Int, val inTransit: Int?)
 internal data class CainiaoReading(val counts: CainiaoCounts, val readAtMillis: Long)
 internal data class CainiaoSelection(val counts: CainiaoCounts?, val stale: Boolean)
 internal data class DailyWeather(val date: LocalDate, val minC: Int, val maxC: Int, val text: String)
-internal data class WeatherSnapshot(val city: String, val zoneId: String, val days: List<DailyWeather>, val readAt: Instant)
+internal data class WeatherSnapshot(val city: String, val zoneId: String, val days: List<DailyWeather>, val readAt: Instant) {
+    val sourceDate: LocalDate get() = days.minOf { it.date }
+}
 internal data class WeatherSelection(val city: String?, val today: DailyWeather?, val tomorrow: DailyWeather?, val stale: Boolean)
 
 internal fun shouldRefreshCainiao(version: String?, code: Long, visible: Boolean, now: Long, last: Long, returning: Boolean): Boolean {
@@ -77,5 +79,5 @@ internal fun selectWeather(snapshot: WeatherSnapshot?, now: Instant, zone: ZoneI
     if (snapshot == null || snapshot.zoneId != zone.id || age < 0 || age >= 86_400_000) return WeatherSelection(null, null, null, true)
     val today = now.atZone(zone).toLocalDate()
     return WeatherSelection(snapshot.city, snapshot.days.singleOrNull { it.date == today },
-        snapshot.days.singleOrNull { it.date == today.plusDays(1) }, age >= 21_600_000)
+        snapshot.days.singleOrNull { it.date == today.plusDays(1) }, age >= 21_600_000 || snapshot.sourceDate < today)
 }

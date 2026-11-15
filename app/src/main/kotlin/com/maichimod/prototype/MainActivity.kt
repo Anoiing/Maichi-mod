@@ -222,7 +222,7 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.settings_button).setOnClickListener { showSettings() }
         findViewById<View>(R.id.settings_back).setOnClickListener { showPage(dashboard) }
         homeInfo = com.maichimod.prototype.home.HomeInfoController(this, dashboard, settingsPage,
-            findViewById(R.id.app_root), { showPage(dashboard) })
+            findViewById(R.id.app_root), { showPage(dashboard) }, savedInstanceState?.getBundle("home_information"))
         val restoredPage = savedInstanceState?.getInt("page", R.id.dashboard) ?: R.id.dashboard
         showPage(listOf(dashboard, monitorSources, monitorPage, settingsPage).firstOrNull { it.id == restoredPage } ?: dashboard)
         connectionSettings.restoreDialogState(savedInstanceState?.getBundle("settings_dialog"))
@@ -298,6 +298,7 @@ class MainActivity : Activity() {
         })
         outState.putString("monitor_source", selectedSource.name)
         outState.putBundle("settings_dialog", connectionSettings.saveDialogState())
+        outState.putBundle("home_information", homeInfo.saveState())
         outState.putInt("settings_section", connectionSettings.selectedSection())
         outState.putBoolean("notificationAsked", notificationAsked)
         outState.putBoolean("cameraAsked", cameraAsked)

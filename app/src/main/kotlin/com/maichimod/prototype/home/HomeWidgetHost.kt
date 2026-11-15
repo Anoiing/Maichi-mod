@@ -18,13 +18,14 @@ import android.widget.FrameLayout
 import android.widget.RemoteViews
 import android.widget.TextView
 
-internal data class WidgetSpec(val key: String, val provider: ComponentName, val hostId: Int, val requestCode: Int,
+internal data class WidgetSpec(val key: String, val provider: ComponentName, val hostId: Int,
     val widthDp: Int, val heightDp: Int, val keepLaidOut: Boolean)
 internal enum class WidgetStatus { MISSING, DISCONNECTED, CONNECTING, CONNECTED, UNAVAILABLE }
 
 internal class HomeWidgetHost(private val activity: Activity, val spec: WidgetSpec, private val store: HomeInfoStore,
     private val parent: ViewGroup, private val launchBind: (Intent, Int) -> Unit,
-    private val status: (WidgetStatus) -> Unit, private val fields: (List<WidgetField>) -> Unit) {
+    private val status: (WidgetStatus) -> Unit, private val fields: (List<WidgetField>) -> Unit,
+    private val restoredPendingId: Int? = null) {
     private val manager = AppWidgetManager.getInstance(activity)
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
@@ -78,11 +79,17 @@ internal class HomeWidgetHost(private val activity: Activity, val spec: WidgetSp
     private fun reconcile() {
         val owned = ownIds()
         val bound = store.boundId(spec.key).takeIf { it in owned && expected(it) } ?: -1
-        val pending = store.pendingId(spec.key).takeIf { it in owned && expected(it) } ?: -1
-        val restored = if (bound >= 0) bound else pending
-        // An unbound pending ID cannot be resumed after process death; a completed bind can.
-        if (store.saveIds(spec.key, restored, -1)) owned.filter { it != restored }.forEach(::delete)
+        val allocated = store.pendingId(spec.key).takeIf { it in owned } ?: -1
+        val completed = allocated.takeIf(::expected) ?: -1
+        val restored = if (bound >= 0) bound else completed
+        // Activity saved state identifies an outstanding system consent flow, including process recovery.
+        val pending = allocated.takeIf { restored < 0 && it >= 0 && it == restoredPendingId } ?: -1
+        if (store.saveIds(spec.key, restored, pending)) owned.filter { it != restored && it != pending }.forEach(::delete)
     }
+
+    // Derived from the persisted allocation, so old null-data cancellation has its own result code.
+    // 49,152 codes are available; no other activity-result flow in this app uses this range.
+    private fun requestCode(id: Int) = 0x4000 + id % 0xC000
 
     fun connect() {
         if (closed) return
@@ -101,7 +108,7 @@ internal class HomeWidgetHost(private val activity: Activity, val spec: WidgetSp
                 launchBind(Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
                     .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, allocated)
                     .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, spec.provider)
-                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_OPTIONS, options()), spec.requestCode)
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_OPTIONS, options()), requestCode(allocated))
             }
         } catch (_: RuntimeException) {
             delete(allocated); store.saveIds(spec.key, -1, -1); status(WidgetStatus.UNAVAILABLE)
@@ -109,12 +116,12 @@ internal class HomeWidgetHost(private val activity: Activity, val spec: WidgetSp
     }
 
     fun onActivityResult(request: Int, result: Int, data: Intent?): Boolean {
-        if (request != spec.requestCode) return false
-        if (closed) return true
         val pending = store.pendingId(spec.key)
-        if (pending < 0) return true
+        if (pending < 0 || request != requestCode(pending)) return false
+        if (closed) return true
         val returned = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pending) ?: pending
-        if (result == Activity.RESULT_OK && returned == pending && pending in ownIds() && expected(pending)) complete(pending)
+        if (returned != pending) return true
+        if (result == Activity.RESULT_OK && pending in ownIds() && expected(pending)) complete(pending)
         else { delete(pending); store.saveIds(spec.key, -1, -1); publishStatus() }
         return true
     }

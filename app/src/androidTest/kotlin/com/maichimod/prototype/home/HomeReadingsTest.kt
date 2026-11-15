@@ -11,6 +11,30 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class HomeReadingsTest {
+    @Test fun olderWeatherCannotReplaceNewerSourceDateOrRestampItFresh() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("home-weather-order-test", 0).edit().clear().commit()
+        val store = HomeInfoStore(context, "home-weather-order-test")
+        val readings = HomeReadings(store)
+        val now = Instant.parse("2026-11-15T17:00:00Z")
+        val zone = ZoneId.of("Asia/Shanghai")
+        val current = listOf(WidgetField("widget_city_name", "拱墅区"), WidgetField("widget_city_date", "11月16日星期一"),
+            WidgetField("widget_current_temperature_unit", "℃"), WidgetField("widget_currentweather_smallicon", description = "雾"),
+            WidgetField("widget_highlow_temperature", "18 / 12"), WidgetField("small_dayOfWeek", "星期二"),
+            WidgetField("small_icon", description = "小雨"), WidgetField("highlow_temperature", "14 / 12"))
+        val older = current.map { when (it.name) {
+            "widget_city_date" -> it.copy(text = "11月15日星期日")
+            "widget_highlow_temperature" -> it.copy(text = "19 / 13")
+            "small_dayOfWeek" -> it.copy(text = "星期一")
+            "highlow_temperature" -> it.copy(text = "18 / 12")
+            else -> it
+        } }
+        assertTrue(readings.acceptWeather(current, now, zone))
+        val expected = readings.weather
+        assertFalse(readings.acceptWeather(older, now.plusSeconds(60), zone))
+        assertEquals(expected, readings.weather)
+        assertEquals(expected, HomeReadings(store).weather)
+    }
     @Test fun rereadingUnchangedWidgetsCannotExtendCacheLifeAndBadFieldsCannotBecomeZero() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.getSharedPreferences("home-readings-test", 0).edit().clear().commit()

@@ -42,6 +42,7 @@ internal class HomeReadings(private val store: HomeInfoStore) {
     fun acceptWeather(fields: List<WidgetField>, now: Instant, zone: ZoneId): Boolean {
         val incoming = parseSystemWeather(fields, now, zone) ?: return false
         val previous = weather
+        if (previous != null && previous.city == incoming.city && previous.zoneId == incoming.zoneId && incoming.sourceDate < previous.sourceDate) return false
         if (previous != null && previous.copy(readAt = now) == incoming) return true
         weather = incoming
         val days = JSONArray()

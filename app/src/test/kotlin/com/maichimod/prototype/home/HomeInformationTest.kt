@@ -10,6 +10,17 @@ class HomeInformationTest {
     private val zone = ZoneId.of("Asia/Shanghai")
     private val now = Instant.parse("2026-11-15T16:30:00Z")
 
+    @Test fun aPriorDaySourceIsMarkedStaleEvenWhenItsRemainingForecastIncludesToday() {
+        val old = fields().map { when (it.name) {
+            "widget_city_date" -> it.copy(text = "11月15日星期日")
+            "small_dayOfWeek" -> it.copy(text = "星期一")
+            else -> it
+        } }
+        val selected = selectWeather(parseSystemWeather(old, now, zone), now, zone)
+        assertNotNull(selected.today)
+        assertTrue("Source date is old even though it was just read", selected.stale)
+    }
+
     @Test fun vendorRefreshIsLimitedToVerifiedVersionAndRespectsForegroundAndReturnCooldowns() {
         val time = now.toEpochMilli()
         assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, 0, false))

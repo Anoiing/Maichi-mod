@@ -55,7 +55,7 @@
                             <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_width="40dp" android:layout_height="40dp" android:layout_gravity="start" android:src="@drawable/ic_camera" android:contentDescription="@null" />
                             <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
                             <TextView style="@style/Widget.Maichi.TileTitle" android:text="@string/monitor" />
-                            <TextView style="@style/Widget.Maichi.TileDetail" android:text="@string/home_monitor_detail" />
+                            <TextView style="@style/Widget.Maichi.TileDetail" android:text="@string/home_monitor_entry_detail" />
                         </com.maichimod.prototype.MaterialPanel>
                         <com.maichimod.prototype.MaterialPanel android:id="@+id/settings_button" style="@style/Widget.Maichi.Tile" android:paddingHorizontal="20dp" android:paddingVertical="16dp" android:contentDescription="@string/settings">
                             <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_width="40dp" android:layout_height="40dp" android:layout_gravity="start" android:src="@drawable/ic_settings" android:contentDescription="@null" />

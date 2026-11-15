@@ -22,6 +22,7 @@ internal class HomeTileRow(context: Context, attrs: AttributeSet) : LinearLayout
                 weight = if (stacked) 0f else 1f
                 marginStart = if (!stacked && index > 0) gap else 0
                 bottomMargin = if (stacked && index < childCount - 1) gap else 0
+                resolveLayoutDirection(layoutDirection)
             }
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)

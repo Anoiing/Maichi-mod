@@ -216,4 +216,12 @@
   <string name="theme_rose">玫瑰</string>
   <string name="theme_amber">琥珀</string>
   <string name="theme_coral">珊瑚</string>
+    <string name="cainiao">菜鸟</string>
+    <string name="cainiao_connect_hint">连接后显示待取件</string>
+    <string name="call_elevator">呼叫电梯</string>
+    <string name="weather_connect_hint">连接系统天气</string>
+    <string name="weather_no_forecast">暂无预报</string>
+    <string name="weather_no_temperature">—</string>
+    <string name="weather_today_label">今天</string>
+    <string name="weather_tomorrow_label">明天</string>
 </resources>

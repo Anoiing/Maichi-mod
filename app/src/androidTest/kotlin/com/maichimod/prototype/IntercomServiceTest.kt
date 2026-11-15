@@ -70,20 +70,20 @@ class IntercomServiceTest {
             }
             click(R.id.sources_back)
             click(R.id.settings_button)
-            for (id in listOf(R.id.settings_tab_local, R.id.settings_tab_devices, R.id.settings_tab_sound, R.id.settings_tab_appearance)) click(id)
-            click(R.id.settings_tab_local)
+            for (id in listOf(R.id.settings_tab_devices, R.id.settings_tab_terminal, R.id.settings_tab_sound, R.id.settings_tab_appearance)) click(id)
+            click(R.id.settings_tab_devices)
             click(R.id.edit_setting)
             instrumentation.waitForIdleSync()
             instrumentation.uiAutomation.waitForIdle(200, 5000)
             val cancel = instrumentation.uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText(fixture.context.getString(R.string.cancel_setting)).first { it.isClickable }
             assertTrue(cancel.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
             instrumentation.waitForIdleSync()
-            click(R.id.settings_tab_devices)
+            click(R.id.settings_tab_terminal)
             for (theme in ThemeColor.entries) {
                 Appearance.save(fixture.context, theme)
                 fixture.scenario.recreate()
                 fixture.scenario.onActivity {
-                    assertEquals(R.id.settings_tab_devices, it.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).checkedRadioButtonId)
+                    assertEquals(R.id.settings_tab_terminal, it.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).checkedRadioButtonId)
                 }
                 assertSame(owner, fixture.service.connection)
                 assertEquals(key, owner.currentState.callKey)

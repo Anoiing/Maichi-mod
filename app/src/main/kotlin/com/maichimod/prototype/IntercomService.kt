@@ -22,6 +22,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.os.BatteryManager
+import android.util.Log
 import com.maichimod.prototype.session.CallStatus
 import com.maichimod.prototype.session.Cancellation
 
@@ -37,6 +38,7 @@ class IntercomService : Service() {
     private var lastNotification: String? = null
     private var callNoticeKey: CallKey? = null
     private var callNoticeFingerprint: String? = null
+    private var requestedPresentation: CallKey? = null
     private lateinit var cpuLock: PowerManager.WakeLock
     private val powerHandler = Handler(Looper.getMainLooper())
     private var renewCpuAt = 0L
@@ -135,8 +137,7 @@ class IntercomService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         val channel = manager.getNotificationChannel(CALL_CHANNEL)
         val notifications = manager.areNotificationsEnabled() && channel?.importance != NotificationManager.IMPORTANCE_NONE
-        val fullScreen = notifications && (channel?.importance ?: 0) >= NotificationManager.IMPORTANCE_HIGH &&
-            (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent())
+        val fullScreen = canPresentFullScreen(manager)
         val audio = getSystemService(AudioManager::class.java)
         connection.updatePresentationCapabilities(notifications, fullScreen,
             audio.ringerMode != AudioManager.RINGER_MODE_NORMAL || audio.getStreamVolume(AudioManager.STREAM_RING) == 0)
@@ -216,17 +217,32 @@ class IntercomService : Service() {
         if (!state.inCall || state.callEnding || key == null) { cancelCallNotice(); return }
         if (key != callNoticeKey) cancelCallNotice()
         if (callNoticeFingerprint == fingerprint(state) && callNoticeKey == key) return
-        getSystemService(NotificationManager::class.java).notify(callTag(key), CALL_NOTIFICATION, callNotification(state, key))
+        val manager = getSystemService(NotificationManager::class.java)
+        val fullScreen = canPresentFullScreen(manager)
+        manager.notify(callTag(key), CALL_NOTIFICATION, callNotification(state, key, fullScreen))
         callNoticeKey = key; callNoticeFingerprint = fingerprint(state)
+        if (state.call == CallStatus.RINGING && fullScreen && requestedPresentation != key) {
+            requestedPresentation = key
+            try { startActivity(IncomingCallActivity.createIntent(this, key)) }
+            catch (failure: RuntimeException) {
+                Log.w("Maichi", "Unable to present incoming call; notification remains available", failure)
+                connection.reportIssue(getString(R.string.call_screen_unavailable))
+            }
+        }
     }
 
     private fun cancelCallNotice() {
         callNoticeKey?.let { getSystemService(NotificationManager::class.java).cancel(callTag(it), CALL_NOTIFICATION) }
         callNoticeKey = null; callNoticeFingerprint = null
+        requestedPresentation = null
     }
     private fun callTag(key: CallKey) = "call:${key.runId}:${key.sequence}"
 
-    private fun callNotification(state: IntercomState, key: CallKey): Notification {
+    private fun canPresentFullScreen(manager: NotificationManager): Boolean =
+        manager.areNotificationsEnabled() && (manager.getNotificationChannel(CALL_CHANNEL)?.importance ?: 0) >= NotificationManager.IMPORTANCE_HIGH &&
+            (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent())
+
+    private fun callNotification(state: IntercomState, key: CallKey, fullScreen: Boolean): Notification {
         val open = callPendingIntent(key, answer = false)
         val answer = callPendingIntent(key, answer = true)
         val end = PendingIntent.getForegroundService(this, 0,
@@ -237,9 +253,6 @@ class IntercomService : Service() {
             .setVisibility(Notification.VISIBILITY_PUBLIC).setContentTitle(name).setContentText(statusText(state)).setContentIntent(open)
         if (state.call == CallStatus.RINGING) builder.addAction(Notification.Action.Builder(null, getString(R.string.answer_call), answer).build())
         builder.addAction(Notification.Action.Builder(null, getString(R.string.hang_up_call), end).build())
-        val manager = getSystemService(NotificationManager::class.java)
-        val fullScreen = manager.areNotificationsEnabled() && (manager.getNotificationChannel(CALL_CHANNEL)?.importance ?: 0) >= NotificationManager.IMPORTANCE_HIGH &&
-            (Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent())
         if (state.call == CallStatus.RINGING && fullScreen) builder.setFullScreenIntent(open, true)
         return builder.build()
     }

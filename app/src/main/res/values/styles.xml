@@ -44,6 +44,7 @@
     <item name="android:layout_height">wrap_content</item>
     <item name="android:minHeight">@dimen/page_header_height</item>
     <item name="android:paddingBottom">16dp</item>
+    <item name="android:layout_marginBottom">@dimen/page_header_spacing</item>
     <item name="android:background">@drawable/page_header_rule</item>
   </style>
   <style name="Widget.Maichi.PageTitle" parent="">
@@ -188,7 +189,7 @@
     <item name="android:textSize">@dimen/label_size</item>
     <item name="android:fontFamily">sans-serif</item>
     <item name="android:fontFeatureSettings">tnum</item>
-    <item name="android:inputType">textVisiblePassword</item>
+    <item name="android:inputType">text|textNoSuggestions</item>
     <item name="android:singleLine">true</item>
     <item name="android:importantForAutofill">no</item>
   </style>
@@ -234,19 +235,21 @@
     <item name="android:textAllCaps">false</item>
   </style>
   <style name="Widget.Maichi.SettingsDescription" parent="Widget.Maichi.Label">
-    <item name="android:layout_marginTop">8dp</item>
+    <item name="android:layout_marginTop">@dimen/element_gap</item>
     <item name="android:textColor">@color/muted_text</item>
     <item name="android:textSize">@dimen/caption_size</item>
   </style>
   <style name="Widget.Maichi.SettingsForm" parent="">
     <item name="android:layout_width">match_parent</item>
     <item name="android:layout_height">wrap_content</item>
-    <item name="android:layout_marginTop">24dp</item>
+    <item name="android:layout_marginTop">@dimen/section_gap</item>
     <item name="android:alignmentMode">alignBounds</item>
   </style>
   <style name="Widget.Maichi.SettingsDivider" parent="">
     <item name="android:layout_width">match_parent</item>
     <item name="android:layout_height">1dp</item>
+    <item name="android:layout_marginTop">@dimen/section_gap</item>
+    <item name="android:layout_marginBottom">@dimen/section_gap</item>
     <item name="android:background">@color/divider</item>
   </style>
   <style name="Widget.Maichi.VolumeButton" parent="android:style/Widget.Material.Button.Borderless">

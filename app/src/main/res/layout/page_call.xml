@@ -4,11 +4,11 @@
         <com.maichimod.prototype.MedioraButton android:id="@+id/call_back" style="@style/Widget.Maichi.PageBack" android:contentDescription="@string/back" />
         <TextView style="@style/Widget.Maichi.PageTitle" android:text="@string/unit_door_call" />
     </FrameLayout>
-    <TextView android:id="@+id/call_state" style="@style/Widget.Maichi.Status" android:layout_gravity="center_horizontal" android:layout_marginTop="4dp" android:gravity="center" android:maxLines="2" android:accessibilityLiveRegion="polite" />
+    <TextView android:id="@+id/call_state" style="@style/Widget.Maichi.Status" android:layout_gravity="center_horizontal" android:gravity="center" android:maxLines="2" android:accessibilityLiveRegion="polite" />
     <TextView android:id="@+id/call_audio_state" style="@style/Widget.Maichi.Label" android:gravity="center" android:layout_gravity="center_horizontal"
-        android:layout_marginTop="4dp" android:maxLines="2" android:accessibilityLiveRegion="polite" />
+        android:layout_marginTop="@dimen/element_gap" android:maxLines="2" android:accessibilityLiveRegion="polite" />
     <com.maichimod.prototype.MedioraButton android:id="@+id/retry_call_audio" style="@style/Widget.Maichi.SettingsAction"
-        android:layout_gravity="center_horizontal" android:text="@string/retry_call_audio" android:visibility="gone" />
+        android:layout_gravity="center_horizontal" android:layout_marginTop="@dimen/element_gap" android:text="@string/retry_call_audio" android:visibility="gone" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="@dimen/tile_gap" android:orientation="horizontal" android:gravity="center_vertical" android:baselineAligned="false">
         <FrameLayout android:id="@+id/call_video_frame" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginEnd="@dimen/page_gap" android:background="@drawable/video_surface">
             <ImageView android:id="@+id/call_preview" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:background="@drawable/video_surface" android:contentDescription="@string/unit_camera_preview" />

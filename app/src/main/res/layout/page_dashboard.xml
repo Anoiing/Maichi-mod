@@ -6,7 +6,7 @@
                 <TextView style="@style/Widget.Maichi.PageTitle" android:layout_marginStart="0dp" android:text="@string/home" />
                 <ImageView android:id="@+id/connection_state" style="@style/Widget.Maichi.NetworkStatus" android:contentDescription="@string/network_status" />
             </FrameLayout>
-            <com.maichimod.prototype.HomeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:minHeight="400dp" android:baselineAligned="false" android:gravity="center_vertical">
+            <com.maichimod.prototype.HomeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="400dp" android:baselineAligned="false" android:gravity="center_vertical">
                 <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.67" android:layout_marginEnd="24dp" android:orientation="vertical" android:gravity="center_vertical">
                     <TextClock android:id="@+id/home_clock" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="sans-serif" android:textStyle="bold" android:includeFontPadding="false" android:fontFeatureSettings="tnum" android:format12Hour="HH:mm" android:format24Hour="HH:mm" android:singleLine="true" android:textSize="@dimen/clock_size" android:textColor="@color/text" />
                     <View android:layout_width="64dp" android:layout_height="5dp" android:layout_marginTop="12dp" android:background="@drawable/clock_accent" android:importantForAccessibility="no" />

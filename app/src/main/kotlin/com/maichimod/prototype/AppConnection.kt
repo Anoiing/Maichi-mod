@@ -213,6 +213,7 @@ internal class AppConnection(
         observers.forEach { if (it in observers) it.onCallFrame(frame) }
     }
     private val audio = CallAudio(app) { direction, health ->
+        if (BuildConfig.DEBUG) Log.i(TAG, "Call audio $direction=$health")
         if (currentState.inCall) updateState(when (direction) {
             AudioDirection.CAPTURE -> currentState.copy(microphone = health)
             AudioDirection.PLAYBACK -> currentState.copy(playback = health)
@@ -481,7 +482,11 @@ internal class AppConnection(
     }
     fun sendCallAudio(pcm: ByteArray, key: CallKey) = withCall(key) { sendAudio(pcm) }
 
-    fun simulateIncoming() { worker.post { replayTransport?.simulateIncoming() } }
+    fun simulateIncoming(delayMs: Long = 0) {
+        require(delayMs in 0L..30_000L)
+        val token = generation.get()
+        worker.postDelayed({ if (token == generation.get()) replayTransport?.simulateIncoming() }, delayMs)
+    }
 
     private fun isCurrentCall(key: CallKey): Boolean = key.runId == runId && key.sequence == callGeneration.get()
 
@@ -659,9 +664,29 @@ internal class AppConnection(
         handleTransportFailure: (Exception) -> Unit = {},
         onOperational: () -> Unit = {},
     ) {
+        // Debug-only metadata distinguishes capture silence from a failed uplink; never retains PCM.
+        var activeAudioSummary = false
+        var sentAudioBlocks = 0L
+        var receivedAudioBlocks = 0L
+        var nonSilentAudioBlocks = 0L
+        var audioPeak = 0
+        var audioEnergy = 0.0
         val logged = object : DatagramTransport {
             override fun send(localPort: Int, destination: Inet4Address, payload: ByteArray) {
                 transport.send(localPort, destination, payload)
+                if (BuildConfig.DEBUG && activeAudioSummary && localPort == MaichiPackets.SESSION_PORT &&
+                    payload.size == 602 && payload[8] == 0xb7.toByte() && payload[10].toInt() == 10 && payload[80].toInt() == 3
+                ) {
+                    sentAudioBlocks++
+                    var peak = 0
+                    for (offset in 90 until payload.size step 2) {
+                        val sample = ((payload[offset].toInt() and 0xff) or (payload[offset + 1].toInt() shl 8)).toShort().toInt()
+                        peak = maxOf(peak, kotlin.math.abs(sample))
+                        audioEnergy += sample.toDouble() * sample
+                    }
+                    audioPeak = maxOf(audioPeak, peak)
+                    if (peak != 0) nonSilentAudioBlocks++
+                }
                 logDatagram("TX", localPort, payload)
             }
 
@@ -701,15 +726,27 @@ internal class AppConnection(
                 scheduler.schedule(delayMs) { if (isCurrent(token, socketToken)) action() }
         }
         session = TerminalSession(profile, logged, sessionScheduler, observer)
+        // Incoming calls currently use the captured unit-door profile. Basement 1 routing stays
+        // pending its own call capture; see docs/protocol/basement-one-incoming-call-pending.md.
         calls = IncomingCallSession(profile, logged, sessionScheduler, object : CallObserver<Bitmap> {
             override fun onPeerActivity() = onOperational()
             override fun onStateChanged(status: CallStatus) {
                 if (status == CallStatus.RINGING) {
+                    if (BuildConfig.DEBUG) {
+                        activeAudioSummary = true
+                        sentAudioBlocks = 0; receivedAudioBlocks = 0; nonSilentAudioBlocks = 0
+                        audioPeak = 0; audioEnergy = 0.0
+                    }
                     callGeneration.incrementAndGet()
                     videoStartedAt = scheduler.nowMs; lastVideoAt = null; videoStalled = false
                     lastUnlockAt = null
                     captureForCall = null
                     session?.closeMonitor()
+                }
+                if (BuildConfig.DEBUG && activeAudioSummary && status != CallStatus.RINGING && status != CallStatus.ANSWERED) {
+                    val rms = if (sentAudioBlocks == 0L) 0.0 else kotlin.math.sqrt(audioEnergy / (sentAudioBlocks * 256.0))
+                    Log.i(TAG, "Call audio summary sent=$sentAudioBlocks received=$receivedAudioBlocks non_silent=$nonSilentAudioBlocks peak=$audioPeak rms=${rms.toInt()}")
+                    activeAudioSummary = false
                 }
                 val callToken = callGeneration.get()
                 if (status == CallStatus.RINGING) watchCallVideo(token, socketToken, callToken)
@@ -732,6 +769,7 @@ internal class AppConnection(
                 main.post(renderCallFrame)
             }
             override fun onAudio(pcm: ByteArray) {
+                if (BuildConfig.DEBUG && activeAudioSummary) receivedAudioBlocks++
                 val callToken = callGeneration.get()
                 publish(token, socketToken) { if (callToken == callGeneration.get()) audio.enqueue(pcm) }
             }

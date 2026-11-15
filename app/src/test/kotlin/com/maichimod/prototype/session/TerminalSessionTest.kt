@@ -67,9 +67,40 @@ class TerminalSessionTest {
         assertEquals(ElevatorStatus.WAITING, session.state.elevator)
         session.receive(elevatorReply(DEMO_PEER_IP))
         assertEquals(ElevatorStatus.RESPONDED, session.state.elevator)
-        clock.advance(5_000)
-        assertEquals(2, transport.sent.size)
+        clock.advance(4_999)
         assertEquals(ElevatorStatus.RESPONDED, session.state.elevator)
+        clock.advance(1)
+        assertEquals(2, transport.sent.size)
+        assertEquals(ElevatorStatus.IDLE, session.state.elevator)
+    }
+
+    @Test fun aPreviousElevatorSuccessCannotClearTheNextRequest() {
+        session.callElevator()
+        session.receive(discovery())
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        clock.advance(4_500)
+
+        session.callElevator()
+        clock.advance(500)
+        assertEquals(ElevatorStatus.DISCOVERING, session.state.elevator)
+        session.receive(discovery())
+        assertEquals(ElevatorStatus.WAITING, session.state.elevator)
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        clock.advance(4_999)
+        assertEquals(ElevatorStatus.RESPONDED, session.state.elevator)
+        clock.advance(1)
+        assertEquals(ElevatorStatus.IDLE, session.state.elevator)
+        assertEquals(listOf(10008, 10000, 10008, 10000), transport.sent.map { it.port })
+    }
+
+    @Test fun sleepingPastElevatorSuccessHidesItOnTheNextDeadlineCheck() {
+        session.callElevator()
+        session.receive(discovery())
+        session.receive(elevatorReply(DEMO_PEER_IP))
+        clock.sleep(5_000)
+        session.checkDeadlines()
+        assertEquals(ElevatorStatus.IDLE, session.state.elevator)
+        assertEquals(2, transport.sent.size)
     }
 
     @Test

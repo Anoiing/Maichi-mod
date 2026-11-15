@@ -36,7 +36,7 @@ internal class ConnectionSettingsView(
     private val onWindowFocusGained: () -> Unit = {},
     private val currentIdleOptions: () -> IdleReturnOptions = { IdleReturnOptions() },
     private val onSaveIdleReturn: (IdleReturnOptions, (Boolean) -> Unit) -> Unit = { _, done -> done(false) },
-    private val onSimulateCall: () -> Unit = {},
+    private val onSimulateCall: (Long) -> Unit = {},
 ) {
     private val context = page.context
     private val backdrop = page.rootView.findViewById<FrameLayout>(R.id.app_root)
@@ -46,10 +46,10 @@ internal class ConnectionSettingsView(
     private val ethernetDetails = page.findViewById<TextView>(R.id.ethernet_details)
     private val retryEthernet = page.findViewById<View>(R.id.retry_ethernet)
     private val autoHangUp = page.findViewById<CompoundButton>(R.id.auto_hang_up_after_unlock)
-    private val sections = listOf(R.id.local_section, R.id.peer_section, R.id.volume_section, R.id.appearance_section).map { page.findViewById<View>(it) }
+    private val sections = listOf(R.id.devices_section, R.id.terminal_section, R.id.volume_section, R.id.appearance_section).map { page.findViewById<View>(it) }
     private val sectionTabs = page.findViewById<RadioGroup>(R.id.settings_tabs)
     private val scroll = page.findViewById<ScrollView>(R.id.settings_scroll)
-    private val tabIds = listOf(R.id.settings_tab_local, R.id.settings_tab_devices, R.id.settings_tab_sound, R.id.settings_tab_appearance)
+    private val tabIds = listOf(R.id.settings_tab_devices, R.id.settings_tab_terminal, R.id.settings_tab_sound, R.id.settings_tab_appearance)
     private var dialog: AlertDialog? = null
     private var dialogField: ConnectionField? = null
     private enum class DialogType { FIELD, MODE, IDLE, RESET }
@@ -66,15 +66,18 @@ internal class ConnectionSettingsView(
     private var idleSaving = false
     private var renderingIdle = false
     private val values = buildMap {
-        val local = page.findViewById<ViewGroup>(R.id.local_parameters)
-        val peer = page.findViewById<ViewGroup>(R.id.peer_parameters)
-        // 门机编号与对应 IP 相邻；中心地址独立放在最后。
-        for (field in ConnectionField.entries.filter { it != ConnectionField.CENTER_IP } + ConnectionField.CENTER_IP) {
+        val devices = page.findViewById<ViewGroup>(R.id.device_parameters)
+        val network = page.findViewById<ViewGroup>(R.id.network_parameters)
+        // 同一设备的身份与地址成对；本机网口和核对参数单独排列。
+        val orderedFields = listOf(ConnectionField.INDOOR_ID, ConnectionField.INDOOR_MAC,
+            ConnectionField.PEER_ID, ConnectionField.PEER_IP,
+            ConnectionField.BASEMENT_ONE_ID, ConnectionField.BASEMENT_ONE_IP,
+            ConnectionField.BASEMENT_TWO_ID, ConnectionField.BASEMENT_TWO_IP,
+            ConnectionField.LOCAL_IP, ConnectionField.SUBNET_MASK, ConnectionField.GATEWAY, ConnectionField.CENTER_IP)
+        for (field in orderedFields) {
             val parent = when (field) {
-                ConnectionField.PEER_ID, ConnectionField.PEER_IP, ConnectionField.CENTER_IP,
-                ConnectionField.BASEMENT_ONE_ID, ConnectionField.BASEMENT_ONE_IP,
-                ConnectionField.BASEMENT_TWO_ID, ConnectionField.BASEMENT_TWO_IP -> peer
-                else -> local
+                ConnectionField.LOCAL_IP, ConnectionField.SUBNET_MASK, ConnectionField.GATEWAY, ConnectionField.CENTER_IP -> network
+                else -> devices
             }
             val row = inflater.inflate(R.layout.settings_field_row, parent, false)
             row.findViewById<TextView>(R.id.setting_label).setText(field.label)
@@ -365,10 +368,12 @@ internal class ConnectionSettingsView(
         val simulateTimeout = content.findViewById<CheckBox>(R.id.simulate_timeout)
         val wiredHelp = content.findViewById<View>(R.id.wired_mode_help)
         val simulateCall = content.findViewById<View>(R.id.simulate_call)
+        val delayedCall = content.findViewById<View>(R.id.simulate_call_delayed)
         fun showMode(wired: Boolean) {
             simulateTimeout.visibility = if (wired) View.GONE else View.VISIBLE
             wiredHelp.visibility = if (wired) View.VISIBLE else View.GONE
             simulateCall.visibility = if (BuildConfig.DEBUG && !wired && !options.wired) View.VISIBLE else View.GONE
+            delayedCall.visibility = simulateCall.visibility
         }
         val wired = saved?.getBoolean("wired") ?: options.wired
         simulateTimeout.isChecked = saved?.getBoolean("simulate_timeout") ?: options.simulateTimeout
@@ -394,7 +399,8 @@ internal class ConnectionSettingsView(
                 }
             }
         }
-        simulateCall.setOnClickListener { picker.dismiss(); onSimulateCall() }
+        simulateCall.setOnClickListener { picker.dismiss(); onSimulateCall(0) }
+        delayedCall.setOnClickListener { picker.dismiss(); onSimulateCall(15_000) }
         showDialog(picker)
     }
 

@@ -11,20 +11,20 @@
             android:text="@string/connection_mode" />
     </FrameLayout>
     <HorizontalScrollView android:id="@+id/settings_tabs_scroll" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginVertical="12dp" android:scrollbars="none">
+        android:layout_marginBottom="@dimen/tabs_content_spacing" android:scrollbars="none">
         <RadioGroup android:id="@+id/settings_tabs" android:layout_width="wrap_content"
             android:layout_height="wrap_content" android:orientation="horizontal"
             android:padding="4dp" android:background="@drawable/settings_tabs_track"
-            android:checkedButton="@id/settings_tab_local">
-            <com.maichimod.prototype.MedioraSettingsTab android:id="@+id/settings_tab_local"
-                style="@style/Widget.Maichi.SettingsTab" android:drawableStart="@drawable/ic_tab_network"
-                android:text="@string/local_network_settings" />
+            android:checkedButton="@id/settings_tab_devices">
             <com.maichimod.prototype.MedioraSettingsTab android:id="@+id/settings_tab_devices"
+                style="@style/Widget.Maichi.SettingsTab" android:drawableStart="@drawable/ic_settings_devices"
+                android:text="@string/device_network_settings" />
+            <com.maichimod.prototype.MedioraSettingsTab android:id="@+id/settings_tab_terminal"
                 style="@style/Widget.Maichi.SettingsTab" android:layout_marginStart="2dp"
-                android:drawableStart="@drawable/ic_settings_devices" android:text="@string/door_device_settings" />
+                android:drawableStart="@drawable/ic_settings_terminal" android:text="@string/terminal_reception_settings" />
             <com.maichimod.prototype.MedioraSettingsTab android:id="@+id/settings_tab_sound"
                 style="@style/Widget.Maichi.SettingsTab" android:layout_marginStart="2dp"
-                android:drawableStart="@drawable/ic_settings_sound" android:text="@string/sound_and_call_settings" />
+                android:drawableStart="@drawable/ic_settings_sound" android:text="@string/sound_settings" />
             <com.maichimod.prototype.MedioraSettingsTab android:id="@+id/settings_tab_appearance"
                 style="@style/Widget.Maichi.SettingsTab" android:layout_marginStart="2dp"
                 android:drawableStart="@drawable/ic_settings_appearance" android:text="@string/appearance_settings" />
@@ -32,68 +32,81 @@
     </HorizontalScrollView>
     <ScrollView android:id="@+id/settings_scroll" android:layout_width="match_parent"
         android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true"
-        android:clipToPadding="false" android:paddingTop="12dp" android:paddingBottom="12dp">
+        android:clipToPadding="false" android:paddingBottom="12dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-            <LinearLayout android:id="@+id/local_section" style="@style/Widget.Maichi.SettingsSection">
-                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/local_network_settings" />
-                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/local_network_help" />
-                <com.maichimod.prototype.SettingsFormGrid android:id="@+id/local_parameters"
-                    style="@style/Widget.Maichi.SettingsForm" />
-                <View style="@style/Widget.Maichi.SettingsDivider" />
+            <LinearLayout android:id="@+id/devices_section" style="@style/Widget.Maichi.SettingsSection">
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/device_network_settings" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/device_network_help" />
                 <TextView android:id="@+id/settings_connection_status" style="@style/Widget.Maichi.Status"
                     android:layout_gravity="start" android:layout_marginTop="16dp" android:accessibilityLiveRegion="polite" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/reset_configuration" style="@style/Widget.Maichi.SettingsAction"
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/reset_configuration" android:visibility="gone" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/household_devices" />
+                <com.maichimod.prototype.SettingsFormGrid android:id="@+id/device_parameters"
+                    style="@style/Widget.Maichi.SettingsForm" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/ethernet_parameters" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/ethernet_parameters_help" />
+                <com.maichimod.prototype.SettingsFormGrid android:id="@+id/network_parameters"
+                    style="@style/Widget.Maichi.SettingsForm" />
                 <TextView android:id="@+id/ethernet_details" style="@style/Widget.Maichi.Label"
                     android:layout_marginTop="8dp" android:lineSpacingExtra="3dp" android:visibility="gone" />
                 <com.maichimod.prototype.MedioraButton android:id="@+id/retry_ethernet"
                     style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp"
                     android:text="@string/retry_monitor" android:visibility="gone" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/terminal_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/terminal_reception_settings" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/terminal_reception_help" />
                 <View style="@style/Widget.Maichi.SettingsDivider" />
-                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/dedicated_terminal" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/reception_settings" />
                 <com.maichimod.prototype.MedioraSwitch android:id="@+id/reception_enabled"
                     android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="@dimen/element_gap"
                     android:paddingVertical="8dp" android:text="@string/enable_reception"
                     android:textColor="@color/text" android:textSize="@dimen/label_size" />
                 <TextView android:id="@+id/reception_hint" style="@style/Widget.Maichi.SettingsDescription"
                     android:accessibilityLiveRegion="polite" />
+                <TextView android:id="@+id/basement_one_call_placeholder" style="@style/Widget.Maichi.SettingsDescription"
+                    android:text="@string/basement_one_call_pending" />
                 <com.maichimod.prototype.MedioraButton android:id="@+id/presentation_settings" style="@style/Widget.Maichi.SettingsAction"
-                    android:text="@string/enable_call_notifications" android:visibility="gone" />
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/enable_call_notifications" android:visibility="gone" />
                 <com.maichimod.prototype.MedioraButton android:id="@+id/background_settings" style="@style/Widget.Maichi.SettingsAction"
-                    android:text="@string/check_background_settings" />
-                <com.maichimod.prototype.MedioraButton android:id="@+id/reset_configuration" style="@style/Widget.Maichi.SettingsAction"
-                    android:text="@string/reset_configuration" android:visibility="gone" />
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/check_background_settings" />
                 <View style="@style/Widget.Maichi.SettingsDivider" />
-                <com.maichimod.prototype.MedioraSwitch android:id="@+id/idle_return_enabled"
-                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
-                    android:paddingVertical="8dp" android:text="@string/idle_return_enabled"
-                    android:textColor="@color/text" android:textSize="@dimen/label_size" />
-                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_return_minutes" style="@style/Widget.Maichi.SettingsAction"
-                    android:text="@string/idle_waiting_time" />
-                <TextView android:id="@+id/idle_return_hint" style="@style/Widget.Maichi.SettingsDescription"
-                    android:accessibilityLiveRegion="polite" />
-                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_detection_settings" style="@style/Widget.Maichi.SettingsAction"
-                    android:text="@string/idle_detection_settings" />
-            </LinearLayout>
-            <LinearLayout android:id="@+id/peer_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
-                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/door_device_settings" />
-                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/door_device_help" />
-                <com.maichimod.prototype.SettingsFormGrid android:id="@+id/peer_parameters"
-                    style="@style/Widget.Maichi.SettingsForm" />
-            </LinearLayout>
-            <LinearLayout android:id="@+id/volume_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
-                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/sound_and_call_settings" />
-                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/sound_settings_help" />
-                <include android:id="@+id/media_volume" layout="@layout/volume_control"
-                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" />
-                <View style="@style/Widget.Maichi.SettingsDivider" android:layout_marginVertical="16dp" />
-                <include android:id="@+id/call_volume" layout="@layout/volume_control" />
-                <TextView android:id="@+id/volume_hint" style="@style/Widget.Maichi.SettingsDescription"
-                    android:layout_marginTop="12dp" android:text="@string/volume_immediate" />
-                <View style="@style/Widget.Maichi.SettingsDivider" android:layout_marginVertical="24dp" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/call_behavior_settings" />
                 <com.maichimod.prototype.MedioraSwitch android:id="@+id/auto_hang_up_after_unlock"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/element_gap"
                     android:minHeight="48dp" android:paddingVertical="8dp" android:gravity="center_vertical"
                     android:text="@string/auto_hang_up_after_unlock" android:textColor="@color/text" android:textSize="@dimen/label_size" />
                 <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/auto_hang_up_after_unlock_help" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/idle_return_settings" />
+                <com.maichimod.prototype.MedioraSwitch android:id="@+id/idle_return_enabled"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="@dimen/element_gap"
+                    android:paddingVertical="8dp" android:text="@string/idle_return_enabled"
+                    android:textColor="@color/text" android:textSize="@dimen/label_size" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_return_minutes" style="@style/Widget.Maichi.SettingsAction"
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/idle_waiting_time" />
+                <TextView android:id="@+id/idle_return_hint" style="@style/Widget.Maichi.SettingsDescription"
+                    android:accessibilityLiveRegion="polite" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/idle_detection_settings" style="@style/Widget.Maichi.SettingsAction"
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/idle_detection_settings" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/volume_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/sound_settings" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/sound_settings_help" />
+                <include android:id="@+id/ringtone_volume" layout="@layout/volume_control"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <include android:id="@+id/call_volume" layout="@layout/volume_control" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <include android:id="@+id/media_volume" layout="@layout/volume_control" />
+                <TextView android:id="@+id/volume_hint" style="@style/Widget.Maichi.SettingsDescription"
+                    android:layout_marginTop="12dp" android:text="@string/volume_immediate" />
             </LinearLayout>
             <LinearLayout android:id="@+id/appearance_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
                 <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/theme_color" />

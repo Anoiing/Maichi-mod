@@ -56,8 +56,16 @@ class IncomingCallInteractionTest {
             fixture.owner.simulateIncoming()
             awaitState(fixture.owner) { it.inCall && it.video == VideoHealth.AVAILABLE }
             val collapsedAt = android.os.SystemClock.elapsedRealtime()
-            val activity = awaitCall { fixture.shell("cmd statusbar collapse") }
+            // The service may already have resumed the call behind SystemUI. Collapsing the
+            // panel then changes window focus without a second lifecycle RESUMED event.
+            val activity = awaitIncomingCall(allowExisting = true) { fixture.shell("cmd statusbar collapse") }
+            var focused = false
+            while (!focused && android.os.SystemClock.elapsedRealtime() - collapsedAt < 2000) {
+                instrumentation.runOnMainSync { focused = activity.hasWindowFocus() }
+                if (!focused) android.os.SystemClock.sleep(20)
+            }
             assertFalse(activity.isFinishing)
+            assertTrue("call did not gain window focus after the panel closed", focused)
             assertTrue("call waited for another state change after panel closed", android.os.SystemClock.elapsedRealtime() - collapsedAt < 2000)
         } finally { fixture.shell("cmd statusbar collapse") }
     }
@@ -140,11 +148,37 @@ class IncomingCallInteractionTest {
         assertFalse(fixture.context.getSystemService(android.os.PowerManager::class.java).isInteractive)
         try {
             val activity = awaitCall { fixture.owner.simulateIncoming() }
-            assertTrue(fixture.context.getSystemService(android.os.PowerManager::class.java).isInteractive)
+            val power = fixture.context.getSystemService(android.os.PowerManager::class.java)
+            val wakeDeadline = android.os.SystemClock.elapsedRealtime() + 2000
+            while (!power.isInteractive && android.os.SystemClock.elapsedRealtime() < wakeDeadline) android.os.SystemClock.sleep(20)
+            assertTrue("resumed call did not wake the display", power.isInteractive)
             assertFalse(activity.isFinishing)
         } finally {
             fixture.shell("input keyevent KEYCODE_WAKEUP")
             fixture.shell("wm dismiss-keyguard")
+        }
+    }
+
+    @Test fun disablingCallChannelWhileBackgroundedPreventsAutomaticPresentation() = RunningIntercom().use { fixture ->
+        showExternalSettings(fixture)
+        assertTrue(fixture.owner.currentState.fullScreenAllowed)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = ActivityLifecycleMonitorRegistry.getInstance()
+        val presented = CountDownLatch(1)
+        val callback = ActivityLifecycleCallback { activity, stage ->
+            if (activity is IncomingCallActivity && stage == Stage.CREATED) presented.countDown()
+        }
+        instrumentation.runOnMainSync { monitor.addLifecycleCallback(callback) }
+        try {
+            setCallChannelEnabled(fixture, false)
+            assertTrue("The test requires the previous foreground capability to remain cached", fixture.owner.currentState.fullScreenAllowed)
+            fixture.owner.simulateIncoming()
+            awaitState(fixture.owner) { it.call == CallStatus.RINGING }
+            assertFalse("A disabled notification must not launch the call page", presented.await(1500, TimeUnit.MILLISECONDS))
+            assertEquals("com.android.settings", instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString())
+        } finally {
+            setCallChannelEnabled(fixture, true)
+            instrumentation.runOnMainSync { monitor.removeLifecycleCallback(callback) }
         }
     }
 
@@ -348,7 +382,7 @@ class IncomingCallInteractionTest {
             override fun onState(state: IntercomState) { if (state.call == CallStatus.RINGING) ringing.countDown() }
         })
         try {
-            fixture.owner.simulateIncoming()
+            val activity = awaitCall { fixture.owner.simulateIncoming() }
             assertTrue(ringing.await(5, TimeUnit.SECONDS))
             val manager = fixture.context.getSystemService(NotificationManager::class.java)
             val noticeDeadline = android.os.SystemClock.elapsedRealtime() + 2000
@@ -357,13 +391,7 @@ class IncomingCallInteractionTest {
                 android.os.SystemClock.sleep(20)
                 notice = manager.activeNotifications.firstOrNull { it.notification.category == Notification.CATEGORY_CALL }?.notification
             }
-            val published = requireNotNull(notice) { "Current call notification was not published" }
-            val activity = awaitCall {
-                val options = android.app.ActivityOptions.makeBasic().apply {
-                    if (android.os.Build.VERSION.SDK_INT >= 34) setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
-                }
-                published.contentIntent.send(fixture.context, 0, null, null, null, null, options.toBundle())
-            }
+            requireNotNull(notice) { "Current call notification was not published" }
             instrumentation.runOnMainSync { activity.findViewById<android.view.View>(R.id.call_back).performClick() }
             val deadline = android.os.SystemClock.elapsedRealtime() + 3000
             var foreground: String? = null
@@ -395,6 +423,32 @@ class IncomingCallInteractionTest {
     }
 
     private fun awaitCall(action: () -> Unit) = awaitIncomingCall(action = action)
+
+    private fun setCallChannelEnabled(fixture: RunningIntercom, enabled: Boolean) {
+        fixture.shell("am start -a android.settings.CHANNEL_NOTIFICATION_SETTINGS --es android.provider.extra.APP_PACKAGE ${fixture.context.packageName} --es android.provider.extra.CHANNEL_ID ${IntercomService.CALL_CHANNEL}")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val deadline = android.os.SystemClock.elapsedRealtime() + 5000
+        var clicked = false
+        val manager = fixture.context.getSystemService(NotificationManager::class.java)
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            val root = instrumentation.uiAutomation.rootInActiveWindow
+            if (root?.packageName?.toString() == "com.android.settings") {
+                val toggle = root.findAccessibilityNodeInfosByViewId("android:id/switch_widget").firstOrNull()
+                if (toggle != null) {
+                    if (toggle.isChecked != enabled && !clicked) {
+                        var target: android.view.accessibility.AccessibilityNodeInfo = toggle
+                        while (!target.isClickable) target = target.parent ?: break
+                        check(target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+                        clicked = true
+                    }
+                    val actual = manager.getNotificationChannel(IntercomService.CALL_CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+                    if (actual == enabled) return
+                }
+            }
+            android.os.SystemClock.sleep(50)
+        }
+        error("Call channel did not become enabled=$enabled")
+    }
 
     private fun awaitAdoptedKey(activity: IncomingCallActivity, expected: CallKey,
         deliveredAt: Long = android.os.SystemClock.elapsedRealtime()) {

@@ -83,6 +83,7 @@ internal class TerminalSession<Frame : Any>(
     fun callElevator() {
         checkDeadlines()
         if (closed || state.elevator == ElevatorStatus.DISCOVERING || state.elevator == ElevatorStatus.WAITING) return
+        elevatorTimeout?.cancel()
         val discoveryPending = state.monitor == MonitorStatus.DISCOVERING && monitorProfile.peerId == profile.peerId
         setElevator(ElevatorStatus.DISCOVERING)
         elevatorDeadline = scheduler.nowMs + DISCOVERY_TIMEOUT_MS
@@ -240,6 +241,10 @@ internal class TerminalSession<Frame : Any>(
         elevatorPeer = null
         elevatorTimeout?.cancel()
         elevatorTimeout = null
+        if (status == ElevatorStatus.RESPONDED) {
+            elevatorDeadline = scheduler.nowMs + ELEVATOR_RESPONSE_DURATION_MS
+            elevatorTimeout = scheduler.schedule(ELEVATOR_RESPONSE_DURATION_MS) { checkDeadlines() }
+        }
         setElevator(status)
     }
 
@@ -250,7 +255,11 @@ internal class TerminalSession<Frame : Any>(
         if (scheduler.nowMs >= minOf(timeoutAt, limitAt)) {
             endMonitor(if (limitAt < timeoutAt) MonitorStatus.ENDED else MonitorStatus.TIMED_OUT, notifyPeer = monitorPeer != null)
         }
-        elevatorDeadline?.let { if (scheduler.nowMs >= it) endElevator(ElevatorStatus.TIMED_OUT) }
+        elevatorDeadline?.let {
+            if (scheduler.nowMs >= it) endElevator(
+                if (state.elevator == ElevatorStatus.RESPONDED) ElevatorStatus.IDLE else ElevatorStatus.TIMED_OUT,
+            )
+        }
     }
 
     private fun sendMonitor(command: MonitorCommand, peer: Inet4Address): Boolean =
@@ -286,6 +295,7 @@ internal class TerminalSession<Frame : Any>(
         private const val DISCOVERY_TIMEOUT_MS = 2_000L
         private const val VIDEO_TIMEOUT_MS = 5_000L
         private const val ELEVATOR_TIMEOUT_MS = 3_000L
+        private const val ELEVATOR_RESPONSE_DURATION_MS = 5_000L
         private const val MONITOR_PROBE_DELAY_MS = 1_010L
         private const val FIRST_KEEP_ALIVE_DELAY_MS = 230L
         private const val KEEP_ALIVE_PERIOD_MS = 110L

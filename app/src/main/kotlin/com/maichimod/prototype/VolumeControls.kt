@@ -12,8 +12,9 @@ internal class VolumeControls(page: View) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val hint = page.findViewById<TextView>(R.id.volume_hint)
     private val rows = listOf(
-        VolumeRow(page.findViewById(R.id.media_volume), AudioManager.STREAM_MUSIC, R.string.media_volume),
+        VolumeRow(page.findViewById(R.id.ringtone_volume), AudioManager.STREAM_RING, R.string.ringtone_volume),
         VolumeRow(page.findViewById(R.id.call_volume), AudioManager.STREAM_VOICE_CALL, R.string.call_volume),
+        VolumeRow(page.findViewById(R.id.media_volume), AudioManager.STREAM_MUSIC, R.string.media_volume),
     )
 
     fun refresh() {

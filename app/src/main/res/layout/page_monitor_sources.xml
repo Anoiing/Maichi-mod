@@ -5,7 +5,7 @@
         <TextView style="@style/Widget.Maichi.PageTitle" android:text="@string/monitor" />
         <ImageView android:id="@+id/sources_state" style="@style/Widget.Maichi.NetworkStatus" android:contentDescription="@string/network_status" />
     </FrameLayout>
-    <TextView style="@style/Widget.Maichi.Label" android:layout_marginTop="24dp" android:text="@string/source_hint" />
+    <TextView style="@style/Widget.Maichi.Label" android:text="@string/source_hint" />
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true" android:layout_marginTop="16dp">
         <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content">
             <com.maichimod.prototype.ContentLayout style="@style/Widget.Maichi.TileRow" android:minHeight="@dimen/tile_row_max_height" android:maxHeight="0dp">
@@ -14,8 +14,8 @@
                         <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_camera" android:contentDescription="@null" />
                         <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
                         <TextView style="@style/Widget.Maichi.SourceName" android:text="@string/unit_door_station" />
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="24dp" android:background="@color/divider" />
-                        <TextView android:id="@+id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="12dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
+                        <View style="@style/Widget.Maichi.SettingsDivider" />
+                        <TextView android:id="@+id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="0dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
                     </LinearLayout>
                 </com.maichimod.prototype.MaterialPanel>
                 <com.maichimod.prototype.MaterialPanel android:id="@+id/basement_one_monitor" style="@style/Widget.Maichi.SourceTile" android:layout_marginStart="16dp">
@@ -23,8 +23,8 @@
                         <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_camera" android:contentDescription="@null" />
                         <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
                         <TextView style="@style/Widget.Maichi.SourceName" android:text="@string/basement_door_station_one" />
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="24dp" android:background="@color/divider" />
-                        <TextView android:id="@id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="12dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
+                        <View style="@style/Widget.Maichi.SettingsDivider" />
+                        <TextView android:id="@id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="0dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
                     </LinearLayout>
                 </com.maichimod.prototype.MaterialPanel>
                 <com.maichimod.prototype.MaterialPanel android:id="@+id/basement_two_monitor" style="@style/Widget.Maichi.SourceTile" android:layout_marginStart="16dp">
@@ -32,8 +32,8 @@
                         <ImageView style="@style/Widget.Maichi.TileIcon" android:layout_gravity="start" android:src="@drawable/ic_camera" android:contentDescription="@null" />
                         <Space android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1" />
                         <TextView style="@style/Widget.Maichi.SourceName" android:text="@string/basement_door_station_two" />
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="24dp" android:background="@color/divider" />
-                        <TextView android:id="@id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="12dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
+                        <View style="@style/Widget.Maichi.SettingsDivider" />
+                        <TextView android:id="@id/source_detail" style="@style/Widget.Maichi.TileDetail" android:layout_marginTop="0dp" android:drawableEnd="@drawable/ic_chevron_right" android:text="@string/view_camera" />
                     </LinearLayout>
                 </com.maichimod.prototype.MaterialPanel>
             </com.maichimod.prototype.ContentLayout>

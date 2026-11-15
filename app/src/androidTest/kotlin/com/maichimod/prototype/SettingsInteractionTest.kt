@@ -13,6 +13,39 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SettingsInteractionTest {
+    @Test fun ringtoneVolumeCanBeChangedWithoutChangingMediaOrCallVolume() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val audio = context.getSystemService(android.media.AudioManager::class.java)
+        val ring = android.media.AudioManager.STREAM_RING
+        val original = audio.getStreamVolume(ring)
+        val maximum = audio.getStreamMaxVolume(ring)
+        val baseline = minOf(5, maximum - 1).coerceAtLeast(1)
+        val media = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        val call = audio.getStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL)
+        try {
+            audio.setStreamVolume(ring, baseline, 0)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    activity.findViewById<android.view.View>(R.id.settings_button).performClick()
+                    activity.findViewById<android.widget.CompoundButton>(R.id.settings_tab_sound).performClick()
+                    val id = activity.resources.getIdentifier("ringtone_volume", "id", activity.packageName)
+                    val row = activity.findViewById<android.view.View>(id)
+                    assertNotNull("Sound settings must expose the actual ringtone stream", row)
+                    assertTrue(row.isShown)
+                    assertTrue(row.findViewById<android.widget.TextView>(R.id.volume_label).text.contains("铃声"))
+                    row.findViewById<android.view.View>(R.id.volume_increase).performClick()
+                    assertEquals(baseline + 1, audio.getStreamVolume(ring))
+                    assertEquals(activity.getString(R.string.volume_value, baseline + 1, maximum),
+                        row.findViewById<android.widget.TextView>(R.id.volume_value).text.toString())
+                    row.findViewById<android.view.View>(R.id.volume_decrease).performClick()
+                    assertEquals(baseline, audio.getStreamVolume(ring))
+                    assertEquals(media, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
+                    assertEquals(call, audio.getStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL))
+                }
+            }
+        } finally { audio.setStreamVolume(ring, original, 0) }
+    }
+
     @Test fun idleSaveFailureAndInvalidMinutesKeepTheDraft() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         var options = IdleReturnOptions()

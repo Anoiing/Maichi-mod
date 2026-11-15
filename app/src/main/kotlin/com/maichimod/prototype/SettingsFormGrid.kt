@@ -27,7 +27,7 @@ internal class SettingsFormGrid(context: Context, attrs: AttributeSet) : GridLay
                     setGravity(Gravity.FILL_HORIZONTAL or Gravity.TOP)
                     marginStart = if (column == 0) 0 else (12 * density).toInt()
                     marginEnd = if (column == columns - 1) 0 else (12 * density).toInt()
-                    bottomMargin = (16 * density).toInt()
+                    bottomMargin = if (index / columns == (childCount - 1) / columns) 0 else (16 * density).toInt()
                 }
             }
             columnCount = columns

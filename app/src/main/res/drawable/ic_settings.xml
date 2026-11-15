@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="32dp" android:height="32dp" android:viewportWidth="32" android:viewportHeight="32">
-    <path android:pathData="M6,8 H26 M6,16 H26 M6,24 H26" android:fillColor="#00000000" android:fillAlpha="0" android:strokeColor="@color/text" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M10,4 H14 Q16,4 16,6 V10 Q16,12 14,12 H10 Q8,12 8,10 V6 Q8,4 10,4 Z M20,12 H24 Q26,12 26,14 V18 Q26,20 24,20 H20 Q18,20 18,18 V14 Q18,12 20,12 Z M9,20 H13 Q15,20 15,22 V26 Q15,28 13,28 H9 Q7,28 7,26 V22 Q7,20 9,20 Z" android:fillColor="@color/primary" android:fillAlpha="1" android:strokeColor="@color/text" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M3,7 H29 M3,16 H29 M3,25 H29" android:fillColor="#00000000" android:fillAlpha="0" android:strokeColor="@color/text" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M8,3 H12 Q14,3 14,5 V9 Q14,11 12,11 H8 Q6,11 6,9 V5 Q6,3 8,3 Z M20,12 H24 Q26,12 26,14 V18 Q26,20 24,20 H20 Q18,20 18,18 V14 Q18,12 20,12 Z M8,21 H12 Q14,21 14,23 V27 Q14,29 12,29 H8 Q6,29 6,27 V23 Q6,21 8,21 Z" android:fillColor="@color/primary" android:fillAlpha="1" android:strokeColor="@color/text" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

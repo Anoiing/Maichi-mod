@@ -143,9 +143,9 @@ class MainActivity : Activity() {
                 if (saved) UserInteractionService.refreshSettings()
                 refreshIdleSettings()
                 done(saved)
-            }) {
+            }) { delayMs ->
             showPage(dashboard)
-            connection?.simulateIncoming()
+            connection?.simulateIncoming(delayMs)
         }
         connectionSettings.renderOptions(options)
         findViewById<View>(R.id.idle_detection_settings).setOnClickListener {

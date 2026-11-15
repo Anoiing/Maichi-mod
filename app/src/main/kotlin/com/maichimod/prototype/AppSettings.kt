@@ -18,6 +18,28 @@ internal class AppSettings(
     private val runtime = AtomicFile(File(context.createDeviceProtectedStorageContext().filesDir, "intercom.json"))
     private fun notes() = AtomicFile(File(context.filesDir, "intercom-notes.json"))
     private fun idleFile() = AtomicFile(File(context.filesDir, "idle-return.json"))
+    private fun standbyFile() = AtomicFile(File(context.filesDir, "standby.json"))
+
+    fun standbyOptions(): StandbyOptions = synchronized(lock) {
+        if (!userUnlocked()) return@synchronized StandbyOptions(valid = false)
+        try {
+            val record = read(standbyFile()) ?: return@synchronized StandbyOptions()
+            check(record.get("version") == 1)
+            StandbyOptions(
+                enabled = record.get("enabled") as? Boolean ?: error("Invalid standby setting"),
+                presenceEnabled = record.get("presenceEnabled") as? Boolean ?: error("Invalid presence setting"),
+            )
+        } catch (failure: Exception) {
+            Log.w(TAG, "Unable to read standby settings", failure)
+            StandbyOptions(valid = false)
+        }
+    }
+
+    fun saveStandby(options: StandbyOptions): Boolean = synchronized(lock) {
+        if (!userUnlocked()) return@synchronized false
+        write(standbyFile(), JSONObject().put("version", 1).put("enabled", options.enabled)
+            .put("presenceEnabled", options.presenceEnabled))
+    }
 
     fun idleReturnOptions(): IdleReturnOptions = synchronized(lock) {
         if (!userUnlocked()) return@synchronized IdleReturnOptions(false, valid = false)

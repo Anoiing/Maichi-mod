@@ -20,6 +20,10 @@ import java.util.Random
 
 /** Mediora LightRays 的七束错相摆动与稀疏流星；离开首页、失焦或关闭动画时停止刷新。 */
 internal class HomeDashboard(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
+    var standbyDimmed = false
+        set(value) { if (field != value) { field = value; invalidate() } }
+    val decorativeAnimationActive: Boolean get() = !standbyDimmed && ValueAnimator.areAnimatorsEnabled() &&
+        isShown && hasWindowFocus() && windowVisibility == View.VISIBLE
     private data class Ray(val left: Float, val angle: Float, val width: Float, val swing: Float, val drift: Float, val delay: Double, val duration: Double, val phase: Float)
     private val unit = resources.displayMetrics.density
     private val primary = context.getColor(R.color.primary)
@@ -62,7 +66,7 @@ internal class HomeDashboard(context: Context, attrs: AttributeSet) : LinearLayo
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val animated = ValueAnimator.areAnimatorsEnabled()
+        val animated = !standbyDimmed && ValueAnimator.areAnimatorsEnabled()
         val time = (SystemClock.uptimeMillis() - started) / 1000.0
         for (index in rays.indices) {
             val ray = rays[index]
@@ -97,7 +101,7 @@ internal class HomeDashboard(context: Context, attrs: AttributeSet) : LinearLayo
                 canvas.restoreToCount(save)
             }
         }
-        if (animated && isShown && hasWindowFocus() && windowVisibility == View.VISIBLE) postInvalidateDelayed(33)
+        if (decorativeAnimationActive) postInvalidateDelayed(33)
     }
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) { super.onWindowFocusChanged(hasWindowFocus); if (hasWindowFocus) invalidate() }
     override fun onVisibilityChanged(changedView: View, visibility: Int) { super.onVisibilityChanged(changedView, visibility); if (visibility == View.VISIBLE) invalidate() }

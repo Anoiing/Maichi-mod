@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="standby_settings">感知与待机</string>
+    <string name="standby_enabled">无人低亮待机</string>
+    <string name="presence_enabled">人脸感知亮屏</string>
+    <string name="standby_disabled">低亮待机已关闭，屏幕跟随系统设置。</string>
+    <string name="standby_touch_only" formatted="false">30 秒无操作后降至 5% 亮度，点击屏幕恢复；来电和监控保持正常亮度。</string>
+    <string name="standby_presence_ready">感知已启用：持续检测到人脸后恢复亮度，无人且 30 秒无操作后低亮待机。</string>
+    <string name="standby_presence_starting">正在启动感知；点击屏幕仍可恢复亮度。</string>
+    <string name="standby_presence_unavailable">感知亮屏暂不可用，点击屏幕唤醒。请检查相机权限或关闭正在使用相机的应用，再重试感知。</string>
+    <string name="standby_camera_denied">感知亮屏暂不可用，点击屏幕唤醒。允许相机权限后可重试感知。</string>
+    <string name="standby_low_battery" formatted="false">电量不高于 10%，已暂停感知并允许系统自动息屏；门禁接待不受影响。</string>
+    <string name="standby_power_disconnected">外部供电已断开，请检查供电；感知运行时会降低检测频率。</string>
+    <string name="standby_settings_corrupt">待机设置无法读取，已暂停感知和低亮待机；重新设置开关可修复。</string>
+    <string name="standby_scope">仅在门禁界面前台生效，默认关闭；人脸仅在本机检测，不保存或上传画面。夜间 22:00～06:00 降频。切到米家或真正锁屏、息屏时暂停感知；系统息屏后请按电源键或等待来电唤醒。</string>
+    <string name="retry_presence">重试感知</string>
+    <string name="allow_presence_camera">允许相机权限</string>
     <string name="idle_accessibility_label">门禁闲置返回</string>
     <string name="idle_accessibility_help">接收操作事件以判断离开门禁后的闲置时间，不读取页面内容或输入的文字，不改变常规触摸方式。门禁来电接待独立运行。</string>
     <string name="idle_detection_settings">设置系统操作检测</string>

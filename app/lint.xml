@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- ML Kit brings AppCompat transitively; our minSdk 26 native Activities use native widgets. -->
+    <issue id="AppCompatCustomView">
+        <ignore path="src/main/kotlin/com/maichimod/prototype/MedioraSettingsTab.kt" />
+        <ignore path="src/main/kotlin/com/maichimod/prototype/MedioraSurface.kt" />
+    </issue>
+</lint>

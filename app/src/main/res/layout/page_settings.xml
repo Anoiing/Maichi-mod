@@ -95,6 +95,21 @@
                     android:accessibilityLiveRegion="polite" />
                 <com.maichimod.prototype.MedioraButton android:id="@+id/idle_detection_settings" style="@style/Widget.Maichi.SettingsAction"
                     android:layout_marginTop="@dimen/element_gap" android:text="@string/idle_detection_settings" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/standby_settings" />
+                <com.maichimod.prototype.MedioraSwitch android:id="@+id/standby_enabled"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="@dimen/element_gap" android:paddingVertical="8dp"
+                    android:text="@string/standby_enabled" android:textColor="@color/text" android:textSize="@dimen/label_size" />
+                <com.maichimod.prototype.MedioraSwitch android:id="@+id/presence_enabled"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:layout_marginTop="@dimen/element_gap" android:paddingVertical="8dp"
+                    android:text="@string/presence_enabled" android:textColor="@color/text" android:textSize="@dimen/label_size" />
+                <TextView android:id="@+id/standby_hint" style="@style/Widget.Maichi.SettingsDescription"
+                    android:accessibilityLiveRegion="polite" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/standby_scope" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/retry_presence" style="@style/Widget.Maichi.SettingsAction"
+                    android:layout_marginTop="@dimen/element_gap" android:text="@string/retry_presence" android:visibility="gone" />
             </LinearLayout>
             <LinearLayout android:id="@+id/volume_section" style="@style/Widget.Maichi.SettingsSection" android:visibility="gone">
                 <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/sound_settings" />

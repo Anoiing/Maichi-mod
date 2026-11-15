@@ -13,6 +13,43 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppSettingsTest {
+    @Test fun standbyChoicesAreOptionalAndDoNotModifyReceptionOrAppearance() {
+        val ctx = context()
+        val store = AppSettings(ctx) { true }
+        store.load()
+        val runtime = File(root, "device/intercom.json").readBytes()
+        ctx.getSharedPreferences("appearance", 0).edit().putString("theme", "charcoal").commit()
+        assertFalse(store.standbyOptions().enabled)
+        assertFalse(store.standbyOptions().presenceEnabled)
+        assertTrue(store.saveStandby(StandbyOptions(true, true)))
+        assertEquals(StandbyOptions(true, true), store.standbyOptions())
+        assertArrayEquals(runtime, File(root, "device/intercom.json").readBytes())
+        assertEquals("charcoal", ctx.getSharedPreferences("appearance", 0).getString("theme", null))
+        assertFalse(store.isReceptionEnabled())
+    }
+
+    @Test fun lockedOrCorruptStandbySettingsNeverEnableCamera() {
+        val ctx = context()
+        val locked = AppSettings(ctx) { false }
+        assertFalse(locked.standbyOptions().enabled)
+        assertFalse(locked.saveStandby(StandbyOptions(true, true)))
+        assertEquals(0, credentialReads)
+        val file = File(ctx.filesDir, "standby.json")
+        val store = AppSettings(ctx) { true }
+        for (json in listOf("broken", "{}", "{\"version\":1,\"enabled\":\"true\",\"presenceEnabled\":true}")) {
+            file.writeText(json)
+            assertFalse(store.standbyOptions().valid)
+            assertFalse(store.standbyOptions().enabled)
+            assertFalse(store.standbyOptions().presenceEnabled)
+        }
+        assertTrue(store.saveStandby(StandbyOptions(true, false)))
+        assertEquals(StandbyOptions(true, false), store.standbyOptions())
+        val blocked = File(file.path + ".new").apply { mkdirs() }
+        File(blocked, "blocker").writeText("keep")
+        assertFalse(store.saveStandby(StandbyOptions(true, true)))
+        assertEquals(StandbyOptions(true, false), store.standbyOptions())
+    }
+
     @Test fun idleReturnDefaultsAndSavingStayOutsideReceptionStorage() {
         val store = AppSettings(context()) { true }
         store.load()

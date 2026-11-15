@@ -10,6 +10,8 @@
 
 **Spec:** [交互与可靠性方案](../specs/2026-11-13-dedicated-intercom-design.md)。完成状态同步至 2026-11-15 的代码 `bc290ec`，场景和安装包对应关系以[主验收记录](../../runbooks/dedicated-intercom-acceptance.md)为准；设置分组以[2026-11-14 调整](2026-11-14-settings-regrouping.md)为准。
 
+**2026-11-16 执行调整：** 用户本轮明确要求继续完成人脸感知与无人低亮待机，已从干净的 `b11cc8c` 提前完成任务 7 的本地开发与隔离回归。下文“现场通过后才开发”的原顺序按本次授权调整；任务 6 未通过的现场条件和 24/72 小时观察保持未通过。任务 7 默认关闭、只开放应用内低亮，尚未安装物理平板，证据见[感知待机验证](../../runbooks/presence-standby-validation-2026-11-16.md)。
+
 | 任务 | 当前完成状态 | 已完成内容与证据 |
 | --- | --- | --- |
 | 1 / P0 | 开发完成 | 统一配置、状态订阅及保存/迁移失败处理；`34d2788` |
@@ -18,13 +20,13 @@
 | 4 / P3 | App 恢复开发完成；系统地址持久化未解决 | 退避、启动/电源恢复 `6fa9a1f`，发现回复固定门禁源地址 `d91814c`；真机重启服务自动运行，但门禁地址丢失 |
 | 5 / P4 | 开发完成；真实输入覆盖部分完成 | 默认 3 分钟、可配 1～30 分钟或关闭、独立操作检测；`bbdbf31`；真机 1 分钟米家返回/续时和暗屏规则通过 |
 | 6 / P5 | 本地完成；现场部分完成 | 结构/性能复核、83 JVM、9 Python、两系统 73 项设备回归；最新三项上行测试及竞态修复见[本地验证](../../runbooks/intercom-local-uplink-validation-2026-11-15.md)；24/72 小时未开始 |
-| 7 / P6 | 未开始 | 核心接待现场验收通过后再开发人脸感知与无人低亮待机 |
+| 7 / P6 | 开发与本地回归完成；现场待验收 | 100 JVM、9 Python、API 31/36 各 87 项设备回归；前置相机/随包模型、待机窗口、输入续时及失败恢复通过；目标平板暗光/功耗等未验收 |
 
 **Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。该基线仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，当时尚无 androidTest 目录。基线核查以 JDK 17 离线重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；当时未安装现场平板或进行真实门机操作。
 
 ## Global Constraints
 
-- 平板长期专用于本户门禁，同时保留已经实现的米家入口。第一期交付持续来电接待、锁屏唤醒、断网/启动恢复、故障交互和可配置的离开应用闲置返回；通过真机验收后，再开发人脸感知亮屏与无人待机。
+- 平板长期专用于本户门禁，同时保留已经实现的米家入口。第一期交付持续来电接待、锁屏唤醒、断网/启动恢复、故障交互和可配置的离开应用闲置返回；感知待机本地开发按本轮授权提前，正式部署仍需补齐现场验收。
 - 只要接待已启用且对讲网可用，UDP 10008/10000 和有线网络状态监听持续保留；所有内部页面、外部应用、后台、暗屏、锁屏与主题重建均不停止或重建监听。UI 绑定数为 0 也继续接待。
 - 自动返回和人脸感知分别是可选交互；关闭或授权不足不能影响来电监听，不能依靠自动回主界面弥补后台漏接。
 - 现有原生 Kotlin、Android View/XML 界面和抓包验证过的门禁协议继续使用。
@@ -172,7 +174,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 - [x] **Step 2: 复核整体结构。** 检查连接、状态、声音和来电页是否各有唯一所有者；原位置逻辑是否真正删除；是否残留双写、转发层、双状态机、临时兼容入口或只为假设未来而增加的接口。控制器中如果出现真实独立且难以理解的职责，再针对该部分拆分；不能以控制器一个文件为目标塞入所有系统细节。
 - [ ] **Step 3: 现场核心验收。** MatePad 核对持久地址/同时供电；逐项在首页、监控选择/三路播放、四个设置分组/弹窗、主题重建、米家/系统设置前台、后台、暗屏和锁屏发起真实来电，确认持续监听。检验通话后回原应用、单向/双向声音、开锁、旧通知、拔插网线/网卡、IP/权限变化与重启首次解锁前后；首次解锁前默认主题可用。另验 R01～R10，可配置闲置返回关闭时仍可后台接待。物理结果由现场确认，系统设置变更由用户参与。
 - [x] **Step 4: 按实测处理性能。** 网络地址就绪后恢复目标 5 秒，完整合法来电收到后铃声/展示目标 2 秒。先记录控制队列与 JPEG 解码耗时；只有实测控制响应不满足目标，才把现有解码移到一个有界工作队列，并直接更新现有 JpegAssembler/会话观察接口和测试，成功解码才刷新健康时间，不长期保留两套路径。当前监控“仅交付最新帧”做法复用于来电。
-- [ ] **Step 5: 稳定性与交付。** 先完成 24 小时，再完成 72 小时观察，包含可追溯测试来电、息屏、米家长时间前台、用户持续操作不被抢占、闲置返回、网络/电源变化。未通过的真实接待、地址恢复、声音、门锁或自动返回先修复，不能以回放替代，也不能进入人脸阶段。保持历史界面记录时间边界，更新实际能力说明，建议 `docs: record dedicated intercom acceptance and operation`。
+- [ ] **Step 5: 稳定性与交付。** 先完成 24 小时，再完成 72 小时观察，包含可追溯测试来电、息屏、米家长时间前台、用户持续操作不被抢占、闲置返回、网络/电源变化。未通过的真实接待、地址恢复、声音、门锁或自动返回继续修复，不能以回放或本轮提前开展的感知本地开发替代现场验收。保持历史界面记录时间边界，更新实际能力说明，建议 `docs: record dedicated intercom acceptance and operation`。
 
 **Step 3 已完成的部分（整体仍未通过）：**
 
@@ -186,7 +188,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **最新本地完成内容：** `bc290ec` 修复挂断期间已排队的音频重试重启录音，新增采集到传输、仅重试声音不重复接听、挂断竞态三项检查；83 JVM、9 Python、Debug/Release/测试包构建及两种 Lint 无错误，API 31 完整 73/73 后加强测试屏障并另跑三项 3/3，API 36 最终完整 73/73，均零跳过。已完成多轮专题和独立全量复审，Release 不含私有样本；详见[上行链路本地验证](../../runbooks/intercom-local-uplink-validation-2026-11-15.md)。最新包 `ec3ec…` 尚未安装平板，不能将该修复认定为现场上行无声的原因或解法。
 
-**剩余与顺序：** 系统门禁 IP 持久化和网口重插/有线启动恢复未解决；真实来电的前后台/锁屏等完整矩阵、上行声音和双方听音、物理门锁/到梯、默认 3 分钟及其余输入覆盖仍待现场。先完成这些核心条件，再执行 24/72 小时观察；任务 6 第 3、5 步继续不勾选，任务 7 不启动。细节见[离线验证](../../runbooks/tablet-offline-validation-2026-11-14.md)、[有线验证](../../runbooks/tablet-live-validation-2026-11-14.md)和[声音记录](../../runbooks/tablet-audio-validation-2026-11-15.md)。
+**剩余与顺序：** 系统门禁 IP 持久化和网口重插/有线启动恢复未解决；真实来电的前后台/锁屏等完整矩阵、上行声音和双方听音、物理门锁/到梯、默认 3 分钟及其余输入覆盖仍待现场。先完成这些核心条件，再执行 24/72 小时观察；任务 6 第 3、5 步继续不勾选。任务 7 按本轮明确授权提前完成本地开发，不据此勾选任务 6 的现场项。细节见[离线验证](../../runbooks/tablet-offline-validation-2026-11-14.md)、[有线验证](../../runbooks/tablet-live-validation-2026-11-14.md)和[声音记录](../../runbooks/tablet-audio-validation-2026-11-15.md)。
 
 ## Task 7: P6 在稳定接待上加入感知与低亮待机
 
@@ -195,13 +197,17 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 - Modify: `app/src/main/kotlin/com/maichimod/prototype/AppConnection.kt`、`app/src/main/kotlin/com/maichimod/prototype/IntercomService.kt`、`app/src/main/kotlin/com/maichimod/prototype/MainActivity.kt`、`app/src/main/kotlin/com/maichimod/prototype/HomeDashboard.kt`、`app/src/main/kotlin/com/maichimod/prototype/ConnectionSettingsView.kt`、`app/src/main/kotlin/com/maichimod/prototype/AppSettings.kt`、`app/src/main/res/layout/page_settings.xml`、`app/src/main/res/values/strings.xml`、`app/src/main/AndroidManifest.xml`、`app/build.gradle.kts`。
 - Test: `app/src/test/kotlin/com/maichimod/prototype/ScreenPolicyTest.kt`、`app/src/androidTest/kotlin/com/maichimod/prototype/PresenceDetectorTest.kt`。
 
-**Interfaces:** Consumes 已通过任务 6 的运行状态；Produces `PresenceDetector.start(onPresence)`、`stop()`、`close()`，结果为 `PRESENT / ABSENT / UNKNOWN`；`ScreenPolicy` 以时间、门禁窗口可见性、通话/监控状态、最近触摸和存在结果为输入，只返回本应用亮度/常亮与检测间隔。外部应用闲置返回与本应用 30 秒低亮是不同功能，不能共用一个到期动作。
+**Interfaces:** Consumes 现有接待服务的只读运行状态（本轮现场准入顺序调整见上文）；Produces `PresenceDetector.start(onPresence)`、`stop()`、`close()`，结果为 `PRESENT / ABSENT / UNKNOWN`；`ScreenPolicy` 以时间、门禁窗口可见性、通话/监控状态、最近触摸和存在结果为输入，只返回本应用亮度/常亮与检测间隔。外部应用闲置返回与本应用 30 秒低亮是不同功能，不能共用一个到期动作。
 
-- [ ] **Step 1: 写失败用例。** 仅在第一期通过后开始，覆盖有人 800 毫秒、空闲 30000 毫秒、5% 亮度、10% 电量，以及未知/旧检测和停止后重启。新增 `dimmedHomeStopsDecorativeFrames`、`externalAppPausesPresenceButKeepsReception`，确认只补现有 HomeDashboard 的低亮暂停，米家前台不受本应用亮度/人脸结果干扰；覆盖 S01～S11。
-- [ ] **Step 2: 验证失败。** 运行 `./gradlew :app:testDebugUnitTest --tests '*ScreenPolicyTest'`；规则测试不需要相机、服务或真实门机。
-- [ ] **Step 3: 最小接入。** 从 SmartFace 复用已核对的本地检测思路，修正暂停恢复和资源释放；CameraX core/camera2/lifecycle 稳定版 `1.6.2`、bundled ML Kit `16.1.7` 为本方案查询基线，执行时检查构建兼容后固定，不引入 Compose 或动态下载模型。相机从可见用户启用流程启动，必要时在现有 Service 按实际系统版本增加 camera 条件。感知失败回到触摸空闲策略，不影响门禁监听。
+**本轮最小实现：** 只新增上述两个生产模块；AppConnection/IntercomService 不改动，直接复用其已有状态。相机只在可见、解锁且屏幕亮着的门禁窗口运行，不增加 camera 前台服务。两个开关初始关闭，配置独立于接待/闲置返回/外观；低电量同时释放闲置常亮。已核对 SmartFace 的检测思路，但不沿用其停止后取消而不重建的作用域、额外跳帧或全局解绑做法。
+
+- [x] **Step 1: 写失败用例。** 按本轮顺序调整推进本地开发，覆盖有人 800 毫秒、空闲 30000 毫秒、5% 亮度、10% 电量，以及未知/旧检测和停止后重启。新增 `dimmedHomeStopsDecorativeFramesAndTouchRestoresSystemBrightness`、`externalAppPausesPresenceButKeepsReception`，确认只补现有 HomeDashboard 的低亮暂停，外部应用前台不受本应用亮度/人脸结果干扰；覆盖 S01～S11 的可自动化规则。
+- [x] **Step 2: 验证失败。** 新规则在类/功能尚不存在时实际失败，再实现并通过；最终 17 项纯规则、100 项完整 JVM 测试均通过。审查发现的启动无结果与旧推理阻塞分别用设备用例先失败后修复；规则测试不需要相机、服务或真实门机。
+- [x] **Step 3: 最小接入。** 已固定 CameraX core/camera2/lifecycle `1.6.2`、bundled ML Kit `16.1.7`，构建兼容通过，不引入 Compose 或动态下载模型。相机从可见用户启用流程启动，失败回到触摸空闲策略，不影响门禁监听。设置弹窗的点按、按键与 IME 文本编辑也刷新操作计时；连续三次错误或 10 秒无结果暂停并提供重试，旧回调不阻塞新会话。
 - [ ] **Step 4: 验证。** 检查暗光、遮挡、侧脸、相机占用、权限拒绝、夜间、来电抢占、停止后重启与功耗；检测最多 200 毫秒一次，稳定无人/夜间 2 秒一次。复用并保留现有 HomeDashboard 的离页/失焦/后台/系统禁用动画暂停，低亮时追加同一暂停条件。米家前台暂停本应用感知，不改全局亮度、不因人脸拉回门禁；自动返回后恢复门禁窗口规则。真正息屏后的感知唤醒另验，未通过只开放应用内低亮，来电监听始终独立。
-- [ ] **Step 5: 清理并提交。** 删除 Activity 或检测回调中直接控制亮度的重复分支，屏幕决定集中在 ScreenPolicy；建议 `feat: add presence-aware intercom standby`，更新实际支持范围。
+- [x] **Step 5: 清理并提交。** 现有 MainActivity 的监控常亮分支已收口到 ScreenPolicy，同一适配器应用到主窗口及设置弹窗；检测回调不直接改亮度、导航或门禁操作。更新方案、README 和验证记录，按 `feat: add presence-aware intercom standby` 提交本轮改动。
+
+**Step 4 本地部分已通过，现场部分保持未勾选：** API 31/36 独立前置相机模拟器各 87/87，零失败/忽略；包括随包模型实际分析、停止重启、错误/超时、待机与恢复、来电/监控抢占、外部窗口暂停、弹窗续时、保存失败及原接待全回归。Debug/Release 构建与 Lint 通过，Release 不含私有样本。目标 MatePad 的暗光、遮挡、侧脸、真实占用、唤亮时延、功耗和长期稳定性仍待验收，真正息屏后的感知唤醒未开放。
 
 ## 场景覆盖与执行约束
 

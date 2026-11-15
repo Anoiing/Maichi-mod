@@ -6,6 +6,8 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.content.ActivityNotFoundException
@@ -14,6 +16,11 @@ import android.content.res.ColorStateList
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.BatteryManager
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -37,6 +44,26 @@ class MainActivity : Activity() {
     private var resumed = false
     private var presentedCallKey: CallKey? = null
     private var notificationAsked = false
+    private var cameraAsked = false
+    private var standbyOptions = StandbyOptions()
+    private val screenPolicy = ScreenPolicy(SystemClock.elapsedRealtime())
+    private val screenHandler = Handler(Looper.getMainLooper())
+    private val screenTick = Runnable { refreshScreenPolicy() }
+    private var detector: PresenceDetector? = null
+    private var detectorGeneration: Long? = null
+    private var batteryPercent = 100
+    private var externalPower = true
+    private val screenEvents = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_BATTERY_CHANGED) {
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                if (level >= 0 && scale > 0) batteryPercent = (level * 100 / scale).coerceIn(0, 100)
+                externalPower = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+            }
+            refreshScreenPolicy()
+        }
+    }
     private val binding = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             if (!started) return
@@ -105,6 +132,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
         MedioraUi.applyWindowInsets(this, findViewById(R.id.app_root))
         notificationAsked = savedInstanceState?.getBoolean("notificationAsked") ?: false
+        cameraAsked = savedInstanceState?.getBoolean("cameraAsked") ?: false
         dashboard = findViewById(R.id.dashboard)
         monitorSources = findViewById(R.id.monitor_sources)
         monitorPage = findViewById(R.id.monitor_page)
@@ -137,13 +165,17 @@ class MainActivity : Activity() {
         connectionSettings = ConnectionSettingsView(settingsPage, { options }, ::saveOptions, { service?.retryReception() }, onThemeSelected = { theme ->
             Appearance.save(this, theme)
             recreate()
-        }, onWindowFocusGained = { showCurrentCall(); refreshIdleSettings() }, currentIdleOptions = { idleOptions },
+        }, onWindowFocusGained = { showCurrentCall(); refreshIdleSettings(); refreshStandbySettings() }, currentIdleOptions = { idleOptions },
             onSaveIdleReturn = { updated, done ->
                 val saved = AppSettings(this).saveIdleReturn(updated.enabled, updated.minutes)
                 if (saved) UserInteractionService.refreshSettings()
                 refreshIdleSettings()
                 done(saved)
-            }) { delayMs ->
+            }, currentStandbyOptions = { standbyOptions }, onSaveStandby = ::saveStandby,
+            onRetryPresence = {
+                if (cameraAllowed()) { detector?.stop(); refreshScreenPolicy() }
+                else requestPresenceCamera()
+            }, onUserInteraction = { onUserInteraction() }) { delayMs ->
             showPage(dashboard)
             connection?.simulateIncoming(delayMs)
         }
@@ -196,6 +228,13 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         started = true
+        val events = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED); addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenEvents, events, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(screenEvents, events)
         UserInteractionService.activityVisible(this, true)
         renderState()
         if (!IntercomService.ensureStarted(this)) Toast.makeText(this, R.string.reception_start_failed, Toast.LENGTH_LONG).show()
@@ -206,12 +245,14 @@ class MainActivity : Activity() {
         super.onResume()
         resumed = true
         refreshIdleSettings()
+        refreshStandbySettings()
         service?.refreshAvailability()
         showCurrentCall()
     }
 
     override fun onPause() {
         resumed = false
+        refreshScreenPolicy()
         presentedCallKey = null
         super.onPause()
     }
@@ -219,6 +260,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         if (monitorPage.isShown) showPage(monitorSources)
         started = false
+        unregisterReceiver(screenEvents)
         UserInteractionService.activityVisible(this, false)
         subscription?.cancel(); subscription = null
         if (bound) unbindService(binding)
@@ -228,6 +270,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        screenHandler.removeCallbacks(screenTick)
+        detector?.close()
         unregisterBack?.invoke()
         connectionSettings.dismissDialog()
         super.onDestroy()
@@ -250,6 +294,7 @@ class MainActivity : Activity() {
         outState.putBundle("settings_dialog", connectionSettings.saveDialogState())
         outState.putInt("settings_section", connectionSettings.selectedSection())
         outState.putBoolean("notificationAsked", notificationAsked)
+        outState.putBoolean("cameraAsked", cameraAsked)
         super.onSaveInstanceState(outState)
     }
 
@@ -275,6 +320,7 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (::connectionSettings.isInitialized) refreshStandbySettings()
         if (hasFocus && ::volumeControls.isInitialized) {
             refreshIdleSettings()
             if (settingsPage.isShown) volumeControls.refresh()
@@ -298,7 +344,6 @@ class MainActivity : Activity() {
         selectedSource = source
         showPage(monitorPage)
         preview.setImageDrawable(null)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (link == LinkStatus.SAMPLE || link == LinkStatus.WIRED_CONNECTED) {
             state = state.copy(monitor = MonitorStatus.DISCOVERING)
             connection?.openMonitor(source)
@@ -310,12 +355,12 @@ class MainActivity : Activity() {
         if (monitorPage.visibility == View.VISIBLE && page !== monitorPage) {
             connection?.closeMonitor()
             preview.setImageDrawable(null)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         for (candidate in listOf(dashboard, monitorSources, monitorPage, settingsPage)) {
             candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
         }
         updateBackNavigation()
+        refreshScreenPolicy()
     }
 
     private fun showCurrentCall() {
@@ -357,6 +402,7 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 31) service?.refreshAvailability()
+        if (requestCode == 41) refreshStandbySettings()
     }
 
     private fun renderState() {
@@ -442,6 +488,7 @@ class MainActivity : Activity() {
             (canPlayMonitor && (monitorInactive || state.monitor == MonitorStatus.TIMED_OUT || state.monitor == MonitorStatus.BUSY))
         retry.visibility = if (canRetry) View.VISIBLE else View.GONE
         if (!showImage) preview.setImageDrawable(null)
+        refreshScreenPolicy()
     }
 
     private fun setNetworkStatus(view: ImageView, label: Int, color: Int) {
@@ -498,4 +545,87 @@ class MainActivity : Activity() {
         connectionSettings.renderIdleReturn(idleOptions, UserInteractionService.isAvailable(), UserInteractionService.returnFailed())
     }
 
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        screenPolicy.interaction(SystemClock.elapsedRealtime())
+        refreshScreenPolicy()
+    }
+
+    private fun cameraAllowed() = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    private fun refreshStandbySettings() {
+        standbyOptions = AppSettings(this).standbyOptions()
+        refreshScreenPolicy()
+    }
+
+    private fun saveStandby(updated: StandbyOptions) {
+        val previouslyActive = standbyOptions.enabled && standbyOptions.presenceEnabled
+        if (!AppSettings(this).saveStandby(updated)) {
+            Toast.makeText(this, R.string.settings_save_failed, Toast.LENGTH_LONG).show()
+            refreshStandbySettings()
+            return
+        }
+        detector?.stop()
+        refreshStandbySettings()
+        if (updated.enabled && updated.presenceEnabled && !previouslyActive && !cameraAllowed()) requestPresenceCamera()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestPresenceCamera() {
+        if (!resumed) return
+        if (!cameraAsked || shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+            cameraAsked = true
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), 41)
+        } else openSystemSettings(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.parse("package:$packageName")))
+    }
+
+    /** One adapter applies the policy to this activity and its own settings dialog only. */
+    internal fun refreshScreenPolicy() {
+        if (!::connectionSettings.isInitialized || !::dashboard.isInitialized) return
+        screenHandler.removeCallbacks(screenTick)
+        val now = SystemClock.elapsedRealtime()
+        val environment = ScreenEnvironment(
+            visible = resumed && (hasWindowFocus() || connectionSettings.hasWindowFocus()),
+            interactive = getSystemService(PowerManager::class.java).isInteractive,
+            unlocked = !getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked,
+            engaged = intercom.inCall || monitorPage.isShown,
+            cameraAllowed = cameraAllowed(), externalPower = externalPower, batteryPercent = batteryPercent,
+            hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY),
+        )
+        val demand = screenPolicy.update(now, standbyOptions, environment)
+        window.applyScreenDemand(demand)
+        connectionSettings.applyScreenDemand(demand)
+        (dashboard as HomeDashboard).standbyDimmed = demand.dimmed
+        val interval = demand.detectionIntervalMs
+        if (interval == null) {
+            if (detector?.status != null && detector?.status != PresenceDetector.Status.STOPPED) detector?.stop()
+            detectorGeneration = null
+        } else {
+            val sensor = detector ?: PresenceDetector(this).also { detector = it }
+            val generation = screenPolicy.sensingGeneration
+            if (detectorGeneration != generation) { sensor.stop(); detectorGeneration = generation }
+            sensor.intervalMs = interval
+            sensor.start { presence, capturedAtMs ->
+                screenPolicy.onPresence(presence, capturedAtMs, generation)
+                refreshScreenPolicy()
+            }
+        }
+        connectionSettings.renderStandby(standbyOptions, detector?.status ?: PresenceDetector.Status.STOPPED,
+            cameraAllowed(), batteryPercent, externalPower)
+        if (environment.visible && (standbyOptions.enabled || environment.engaged)) {
+            val delay = demand.nextCheckAtMs?.let { (it - now).coerceIn(1, 1000) } ?: 1000
+            screenHandler.postDelayed(screenTick, delay)
+        }
+    }
+}
+
+internal fun android.view.Window.applyScreenDemand(demand: ScreenDemand) {
+    if (attributes.screenBrightness != demand.brightness) {
+        attributes = attributes.apply { screenBrightness = demand.brightness }
+    }
+    val flag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+    val keepingOn = attributes.flags and flag != 0
+    if (demand.keepScreenOn && !keepingOn) addFlags(flag)
+    else if (!demand.keepScreenOn && keepingOn) clearFlags(flag)
 }

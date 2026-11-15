@@ -36,6 +36,10 @@ internal class ConnectionSettingsView(
     private val onWindowFocusGained: () -> Unit = {},
     private val currentIdleOptions: () -> IdleReturnOptions = { IdleReturnOptions() },
     private val onSaveIdleReturn: (IdleReturnOptions, (Boolean) -> Unit) -> Unit = { _, done -> done(false) },
+    private val currentStandbyOptions: () -> StandbyOptions = { StandbyOptions() },
+    private val onSaveStandby: (StandbyOptions) -> Unit = {},
+    private val onRetryPresence: () -> Unit = {},
+    private val onUserInteraction: () -> Unit = {},
     private val onSimulateCall: (Long) -> Unit = {},
 ) {
     private val context = page.context
@@ -65,6 +69,12 @@ internal class ConnectionSettingsView(
     private val idleHint = page.findViewById<TextView>(R.id.idle_return_hint)
     private var idleSaving = false
     private var renderingIdle = false
+    private val standby = page.findViewById<CompoundButton>(R.id.standby_enabled)
+    private val presence = page.findViewById<CompoundButton>(R.id.presence_enabled)
+    private val standbyHint = page.findViewById<TextView>(R.id.standby_hint)
+    private val retryPresence = page.findViewById<Button>(R.id.retry_presence)
+    private var renderingStandby = false
+    private var screenDemand = ScreenDemand()
     private val values = buildMap {
         val devices = page.findViewById<ViewGroup>(R.id.device_parameters)
         val network = page.findViewById<ViewGroup>(R.id.network_parameters)
@@ -116,6 +126,13 @@ internal class ConnectionSettingsView(
         selectSection(0)
         page.findViewById<View>(R.id.connection_mode_button).setOnClickListener { editMode() }
         retryEthernet.setOnClickListener { onRetry() }
+        standby.setOnCheckedChangeListener { _, checked ->
+            if (!renderingStandby) onSaveStandby(currentStandbyOptions().copy(enabled = checked, valid = true))
+        }
+        presence.setOnCheckedChangeListener { _, checked ->
+            if (!renderingStandby) onSaveStandby(currentStandbyOptions().copy(presenceEnabled = checked, valid = true))
+        }
+        retryPresence.setOnClickListener { onRetryPresence() }
         idleMinutes.setOnClickListener { editIdleMinutes() }
         idleReturn.setOnCheckedChangeListener { _, checked ->
             if (renderingIdle || idleSaving || checked == currentIdleOptions().enabled) return@setOnCheckedChangeListener
@@ -141,6 +158,35 @@ internal class ConnectionSettingsView(
     fun selectedSection(): Int = tabIds.indexOf(sectionTabs.checkedRadioButtonId).coerceAtLeast(0)
 
     fun hasWindowFocus(): Boolean = dialog?.window?.decorView?.hasWindowFocus() == true
+
+    fun applyScreenDemand(demand: ScreenDemand) {
+        screenDemand = demand
+        dialog?.window?.applyScreenDemand(demand)
+    }
+
+    fun renderStandby(options: StandbyOptions, status: PresenceDetector.Status, cameraAllowed: Boolean,
+        batteryPercent: Int, externalPower: Boolean) {
+        renderingStandby = true
+        standby.isChecked = options.enabled
+        presence.isChecked = options.presenceEnabled
+        presence.isEnabled = options.enabled
+        renderingStandby = false
+        val message = when {
+            !options.valid -> R.string.standby_settings_corrupt
+            !options.enabled -> R.string.standby_disabled
+            batteryPercent <= 10 -> R.string.standby_low_battery
+            !options.presenceEnabled -> R.string.standby_touch_only
+            !cameraAllowed -> R.string.standby_camera_denied
+            status == PresenceDetector.Status.UNAVAILABLE -> R.string.standby_presence_unavailable
+            status == PresenceDetector.Status.STARTING -> R.string.standby_presence_starting
+            else -> R.string.standby_presence_ready
+        }
+        standbyHint.text = context.getString(message) + if (options.enabled && !externalPower) "\n" +
+            context.getString(R.string.standby_power_disconnected) else ""
+        retryPresence.visibility = if (options.enabled && options.presenceEnabled &&
+            (!cameraAllowed || status == PresenceDetector.Status.UNAVAILABLE)) View.VISIBLE else View.GONE
+        retryPresence.setText(if (cameraAllowed) R.string.retry_presence else R.string.allow_presence_camera)
+    }
 
     fun restoreSection(index: Int) {
         val selected = tabIds[index.coerceIn(tabIds.indices)]
@@ -309,6 +355,7 @@ internal class ConnectionSettingsView(
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
+                onUserInteraction()
                 error.visibility = View.GONE
                 input.isSelected = false
             }
@@ -454,6 +501,24 @@ internal class ConnectionSettingsView(
         })
         next.setCustomTitle(header)
         next.show()
+        next.window?.let { window ->
+            val previous = window.callback
+            window.callback = object : android.view.Window.Callback by previous {
+                override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+                    onUserInteraction()
+                    return previous.dispatchTouchEvent(event)
+                }
+                override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                    if (event.action == android.view.KeyEvent.ACTION_DOWN) onUserInteraction()
+                    return previous.dispatchKeyEvent(event)
+                }
+                override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+                    if (event.action == android.view.MotionEvent.ACTION_SCROLL) onUserInteraction()
+                    return previous.dispatchGenericMotionEvent(event)
+                }
+            }
+            window.applyScreenDemand(screenDemand)
+        }
         next.window?.decorView?.viewTreeObserver?.addOnWindowFocusChangeListener(focusListener)
         savedForeground = backdrop.foreground
         backdrop.foreground = ColorDrawable(context.getColor(R.color.dialog_scrim))

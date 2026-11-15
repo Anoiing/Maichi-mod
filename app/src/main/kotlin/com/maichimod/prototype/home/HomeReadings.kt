@@ -34,7 +34,8 @@ internal class HomeReadings(private val store: HomeInfoStore) {
     fun acceptCainiao(fields: List<WidgetField>, now: Long): Boolean {
         fun field(name: String) = fields.filter { it.name == name }.singleOrNull()?.text
         val counts = parseCainiaoCounts(field("tv_pkg_status"), field("tv_pkg_num"), field("tv_pkg_arrive")) ?: return false
-        if (cainiao?.counts == counts) return true
+        val previous = cainiao
+        if (previous != null && previous.counts == counts && previous.readAtMillis <= now) return true
         cainiao = CainiaoReading(counts, now)
         store.saveText("cainiao.cache", JSONObject().put("count", counts.awaitingPickup).put("transit", counts.inTransit ?: JSONObject.NULL).put("readAt", now).toString())
         return true
@@ -42,8 +43,9 @@ internal class HomeReadings(private val store: HomeInfoStore) {
     fun acceptWeather(fields: List<WidgetField>, now: Instant, zone: ZoneId): Boolean {
         val incoming = parseSystemWeather(fields, now, zone) ?: return false
         val previous = weather
-        if (previous != null && previous.city == incoming.city && previous.zoneId == incoming.zoneId && incoming.sourceDate < previous.sourceDate) return false
-        if (previous != null && previous.copy(readAt = now) == incoming) return true
+        if (previous != null && previous.city == incoming.city && previous.zoneId == incoming.zoneId &&
+            incoming.sourceDate < previous.sourceDate && selectWeather(previous, now, zone).today != null) return false
+        if (previous != null && previous.readAt <= now && previous.copy(readAt = now) == incoming) return true
         weather = incoming
         val days = JSONArray()
         incoming.days.forEach { day -> days.put(JSONObject().put("date", day.date.toString()).put("min", day.minC).put("max", day.maxC).put("text", day.text)) }

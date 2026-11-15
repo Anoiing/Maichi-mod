@@ -14,6 +14,12 @@ internal data class DailyWeather(val date: LocalDate, val minC: Int, val maxC: I
 internal data class WeatherSnapshot(val city: String, val zoneId: String, val days: List<DailyWeather>, val readAt: Instant)
 internal data class WeatherSelection(val city: String?, val today: DailyWeather?, val tomorrow: DailyWeather?, val stale: Boolean)
 
+internal fun shouldRefreshCainiao(version: String?, code: Long, visible: Boolean, now: Long, last: Long, returning: Boolean): Boolean {
+    if (!visible || version != "8.11.1105" || code != 478L) return false
+    if (last == 0L) return true
+    return now - last >= if (returning) 30_000 else 1_800_000
+}
+
 internal fun parseCainiaoCounts(status: String?, number: String?, arrival: String?): CainiaoCounts? {
     if (status?.trim() != "待取件" || number == null || !number.trim().matches(Regex("[0-9]{1,4}"))) return null
     val count = number.trim().toIntOrNull()?.takeIf { it in 0..9999 } ?: return null

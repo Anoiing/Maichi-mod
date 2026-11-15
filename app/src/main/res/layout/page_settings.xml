@@ -127,6 +127,18 @@
                 <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/theme_color" />
                 <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/theme_color_help" />
                 <com.maichimod.prototype.SettingsFormGrid android:id="@+id/theme_choices" style="@style/Widget.Maichi.SettingsForm" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView style="@style/Widget.Maichi.SectionTitle" android:text="@string/home_information" />
+                <TextView style="@style/Widget.Maichi.SettingsDescription" android:text="@string/home_information_help" />
+                <TextView android:id="@+id/weather_connection" style="@style/Widget.Maichi.SettingsDescription" android:layout_marginTop="16dp" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/weather_connect" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/weather_connect_hint" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/weather_open" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/weather_open" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/weather_disconnect" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/weather_disconnect" />
+                <View style="@style/Widget.Maichi.SettingsDivider" />
+                <TextView android:id="@+id/cainiao_connection" style="@style/Widget.Maichi.SettingsDescription" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/cainiao_connect" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/cainiao_connect" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/cainiao_disconnect" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/cainiao_disconnect" />
+                <com.maichimod.prototype.MedioraButton android:id="@+id/home_information_refresh" style="@style/Widget.Maichi.SettingsAction" android:layout_marginTop="8dp" android:text="@string/home_information_refresh" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>

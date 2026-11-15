@@ -19,6 +19,8 @@
 
     <queries>
         <package android:name="com.xiaomi.smarthome" />
+        <package android:name="com.cainiao.wireless" />
+        <package android:name="com.huawei.android.totemweather" />
     </queries>
 
     <application

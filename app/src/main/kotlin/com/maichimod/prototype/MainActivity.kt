@@ -35,6 +35,7 @@ import com.maichimod.prototype.session.TerminalState
 import com.maichimod.prototype.transport.WiredLink
 
 class MainActivity : Activity() {
+    private lateinit var homeInfo: com.maichimod.prototype.home.HomeInfoController
     private var connection: AppConnection? = null
     private var subscription: com.maichimod.prototype.session.Cancellation? = null
     private var service: IntercomService? = null
@@ -220,6 +221,8 @@ class MainActivity : Activity() {
         }
         findViewById<View>(R.id.settings_button).setOnClickListener { showSettings() }
         findViewById<View>(R.id.settings_back).setOnClickListener { showPage(dashboard) }
+        homeInfo = com.maichimod.prototype.home.HomeInfoController(this, dashboard, settingsPage,
+            findViewById(R.id.app_root), { showPage(dashboard) })
         val restoredPage = savedInstanceState?.getInt("page", R.id.dashboard) ?: R.id.dashboard
         showPage(listOf(dashboard, monitorSources, monitorPage, settingsPage).firstOrNull { it.id == restoredPage } ?: dashboard)
         connectionSettings.restoreDialogState(savedInstanceState?.getBundle("settings_dialog"))
@@ -228,6 +231,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         started = true
+        homeInfo.start()
         val events = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED); addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
@@ -258,6 +262,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        homeInfo.stop()
         if (monitorPage.isShown) showPage(monitorSources)
         started = false
         unregisterReceiver(screenEvents)
@@ -270,6 +275,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (::homeInfo.isInitialized) homeInfo.close()
         screenHandler.removeCallbacks(screenTick)
         detector?.close()
         unregisterBack?.invoke()
@@ -359,8 +365,15 @@ class MainActivity : Activity() {
         for (candidate in listOf(dashboard, monitorSources, monitorPage, settingsPage)) {
             candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
         }
+        if (::homeInfo.isInitialized) homeInfo.setDashboardVisible(page === dashboard)
         updateBackNavigation()
         refreshScreenPolicy()
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (::homeInfo.isInitialized) homeInfo.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun showCurrentCall() {

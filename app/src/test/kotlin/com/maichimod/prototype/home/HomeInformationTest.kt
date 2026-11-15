@@ -10,6 +10,18 @@ class HomeInformationTest {
     private val zone = ZoneId.of("Asia/Shanghai")
     private val now = Instant.parse("2026-11-15T16:30:00Z")
 
+    @Test fun vendorRefreshIsLimitedToVerifiedVersionAndRespectsForegroundAndReturnCooldowns() {
+        val time = now.toEpochMilli()
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, 0, false))
+        assertFalse(shouldRefreshCainiao("8.11.1106", 479, true, time, 0, false))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, false, time, 0, false))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 1_799_999, false))
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 1_800_000, false))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 29_999, true))
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 30_000, true))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, time, time + 1000, true))
+    }
+
     @Test fun countsRequirePickupSemanticsAndNeverConvertUnknownToZero() {
         assertEquals(CainiaoCounts(2, 1), parseCainiaoCounts("待取件", "2", "还有1个包裹在路上"))
         assertEquals(CainiaoCounts(0, null), parseCainiaoCounts("待取件", "0", null))

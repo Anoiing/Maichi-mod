@@ -8,7 +8,7 @@
 
 **Tech Stack:** 原生 Kotlin、Android View/XML、JDK 17、minSdk 26、compileSdk/targetSdk 36、现有 JUnit 4.13.2；AndroidX Test 只用于设备测试，人脸阶段才引入 CameraX/本地 ML Kit。
 
-**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。状态：第一期本地开发、隔离验证和多轮全量审查完成；现场验收待执行，感知阶段尚未进入。
+**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。截至 2026-11-15：任务 1～5 的开发完成，任务 6 的本地回归与部分真机检查完成，真实来电和长期验收尚未通过；任务 7 尚未进入。最新真机依据见[离线验证](../../runbooks/tablet-offline-validation-2026-11-14.md)和[真实门禁网络验证](../../runbooks/tablet-live-validation-2026-11-14.md)。设置分组以[2026-11-14 调整](2026-11-14-settings-regrouping.md)为准。
 
 **Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。该基线仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，当时尚无 androidTest 目录。基线核查以 JDK 17 离线重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；当时未安装现场平板或进行真实门机操作。
 
@@ -148,7 +148,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 - [x] **Step 1: 本地能力探测与失败用例。** 验证系统服务的元数据、常规触摸保持及隔离模拟器的外部设置操作/回前台；目标机输入覆盖按上述调整后移。编写 `returnsOnceAfterThreeMinuteExternalIdle`、`interactionAt179999RestartsDeadline`、`ownPagesNeverAutoNavigate`、`windowRefreshDoesNotCountAsUserInput`、`disabledOrUnauthorizedNeverReturns`、`lockedDeadlineWaitsForNormalUnlock`、`activeCallSuspendsReturn`、`failedForegroundStartDoesNotLoop`、`serviceRecoveryStartsFreshDeadline`，并用真实任务复用用例验证不重启监听；断言 179999 毫秒不返回、180000 毫秒只返回一次、操作后完整重计。
 - [x] **Step 2: 验证失败与支持范围。** 运行 `./gradlew :app:testDebugUnitTest --tests '*IdleReturnTest'` 和对应设备用例。全局输入探测必须使用目标机事件证据；不能用 MainActivity.onUserInteraction 或固定延时假装其他应用的操作检测。未可靠覆盖的交互记录为受限，先解决实际能力再宣称该功能通过。
 - [x] **Step 3: 最小实现。** 只新增一个必要的无障碍服务；只订阅交互/前台判断需要的事件元数据，不读取页面内容、不请求触摸探索或模拟手势。保留一个截止时间、一个取消任务；外部操作重计，窗口刷新不续时，门禁任意页不跳转。按系统允许条件复用门禁原任务，保留页面和草稿，不恢复监控，不改变监听。锁屏/暗屏到期仅标记待返回，正常唤醒解锁后再核对；来电/通话优先，结束后仍在外部应用则重新给完整时长。
-- [x] **Step 4: 验证 R01～R10 本地规则与接入。** 本机与网络分组加入“闲置后返回门禁”和时长编辑，保存失败不误显示生效；权限不足明确提示并提供系统授权入口，门禁接待仍正常。验证时长变更、关闭、权限撤销、用户持续操作、通话中到期、暗屏到期及拒绝拉起；应用返回只能带来一次 UI 绑定，接待传输实例与通话状态不变。保留米家包查询/启动和现有失败提示。目标机实际操作覆盖不在此标为通过。
+- [x] **Step 4: 验证 R01～R10 本地规则与接入。** 终端与接待分组提供“闲置后返回门禁”和时长编辑，保存失败不误显示生效；权限不足明确提示并提供系统授权入口，门禁接待仍正常。验证时长变更、关闭、权限撤销、用户持续操作、通话中到期、暗屏到期及拒绝拉起；应用返回只能带来一次 UI 绑定，接待传输实例与通话状态不变。保留米家包查询/启动和现有失败提示。目标机实际操作覆盖不在此标为通过。
 - [x] **Step 5: 清理并提交。** 不把无障碍检测作为 IntercomService 的依赖，不建立通用 IdleManager/多权限探测框架，不把返回偏好迁进 Direct Boot 接待记录；建议 `feat: return to intercom after configurable external idle`。
 
 ## Task 6: P5 整体回归、结构复核与真实验收
@@ -164,7 +164,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 - [x] **Step 4: 按实测处理性能。** 网络地址就绪后恢复目标 5 秒，完整合法来电收到后铃声/展示目标 2 秒。先记录控制队列与 JPEG 解码耗时；只有实测控制响应不满足目标，才把现有解码移到一个有界工作队列，并直接更新现有 JpegAssembler/会话观察接口和测试，成功解码才刷新健康时间，不长期保留两套路径。当前监控“仅交付最新帧”做法复用于来电。
 - [ ] **Step 5: 稳定性与交付。** 先完成 24 小时，再完成 72 小时观察，包含可追溯测试来电、息屏、米家长时间前台、用户持续操作不被抢占、闲置返回、网络/电源变化。未通过的真实接待、地址恢复、声音、门锁或自动返回先修复，不能以回放替代，也不能进入人脸阶段。保持历史界面记录时间边界，更新实际能力说明，建议 `docs: record dedicated intercom acceptance and operation`。
 
-**本地结论：** 代码与构建检查已完成；第 3、5 步按用户暂不安装的要求保留待执行，不能据此勾选现场/长期验收或启动任务 7。实测和多轮审查见验收记录。
+**当前结论（2026-11-15）：** 代码与本地回归已完成。用户随后已授权安装，目标 MatePad 完成样本来电、真实米家前台/息屏展示、部分闲置操作、重启自动启动及真实单元门/地库 2 监控检查；这些不等于真实门机来电、双向声音、物理开锁或到梯通过。重启后临时门禁地址丢失已确认，持久地址、网口拔插/有线启动恢复及 24/72 小时观察尚未通过，因此第 3、5 步继续不勾选，任务 7 不启动。详见验收记录及其当日真机记录。
 
 ## Task 7: P6 在稳定接待上加入感知与低亮待机
 

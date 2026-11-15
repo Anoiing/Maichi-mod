@@ -64,7 +64,9 @@
 
 源文件：[AppConnection](../../../app/src/main/kotlin/com/maichimod/prototype/AppConnection.kt)、[IntercomService](../../../app/src/main/kotlin/com/maichimod/prototype/IntercomService.kt)、[EthernetTransport](../../../app/src/main/kotlin/com/maichimod/prototype/transport/EthernetTransport.kt)。
 
-当前代码已包含持续接待服务和独立来电页。目标 MatePad 已验证真实米家前台及息屏下的样本来电自动展示、部分闲置返回、真实重启自动启动，以及单元门和地库 2 的真实监控；这些结果不代表真实门机来电、双向声音、物理门锁或长期稳定性通过。门禁地址重启后丢失仍待解决，米家接入不得绕过这项现有接待前提。[专用终端验收记录](../../runbooks/dedicated-intercom-acceptance.md)、[实际门禁网络记录](../../runbooks/tablet-live-validation-2026-11-14.md)
+截至 2026-11-15，当前代码已完成持续接待服务、独立来电页、恢复和可配置闲置返回。目标 MatePad 已验证真实米家前台及息屏下的样本自动展示、部分闲置返回、真实重启自动启动，以及单元门和地库 2 的真实监控。用户另报告旧包真实来电能显示、接听、进行开锁操作及挂断，平板可听门口，但门口听不到平板；完整场景、双向声音、物理门锁和长期稳定性仍未通过。最新 `bc290ec` 的挂断音频重试修复及上行集成测试仅完成本地验证，未安装平板，不能解释为现场上行已修复。[专用终端验收记录](../../runbooks/dedicated-intercom-acceptance.md)、[声音记录](../../runbooks/tablet-audio-validation-2026-11-15.md)、[本地上行验证](../../runbooks/intercom-local-uplink-validation-2026-11-15.md)
+
+门禁地址重启丢失已确认，系统持久保存受权限阻断；米家接入不得绕过这项现有接待前提。本方案仍只完成资料、账号登录和资源入口核查，Android OT SDK 未取得，接入代码尚未开始。
 
 新增接入层只负责外部指令的校验、转换、反馈，以及已有状态的上报。它复用现有服务和会话，不另建门机 Socket、音频系统或通话状态机。
 

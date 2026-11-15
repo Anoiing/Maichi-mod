@@ -8,7 +8,17 @@
 
 **Tech Stack:** 原生 Kotlin、Android View/XML、JDK 17、minSdk 26、compileSdk/targetSdk 36、现有 JUnit 4.13.2；AndroidX Test 只用于设备测试，人脸阶段才引入 CameraX/本地 ML Kit。
 
-**Spec:** `docs/superpowers/specs/2026-11-13-dedicated-intercom-design.md`。截至 2026-11-15：任务 1～5 的开发完成，任务 6 的本地回归与部分真机检查完成，真实来电和长期验收尚未通过；任务 7 尚未进入。最新真机依据见[离线验证](../../runbooks/tablet-offline-validation-2026-11-14.md)和[真实门禁网络验证](../../runbooks/tablet-live-validation-2026-11-14.md)。设置分组以[2026-11-14 调整](2026-11-14-settings-regrouping.md)为准。
+**Spec:** [交互与可靠性方案](../specs/2026-11-13-dedicated-intercom-design.md)。完成状态同步至 2026-11-15 的代码 `bc290ec`，场景和安装包对应关系以[主验收记录](../../runbooks/dedicated-intercom-acceptance.md)为准；设置分组以[2026-11-14 调整](2026-11-14-settings-regrouping.md)为准。
+
+| 任务 | 当前完成状态 | 已完成内容与证据 |
+| --- | --- | --- |
+| 1 / P0 | 开发完成 | 统一配置、状态订阅及保存/迁移失败处理；`34d2788` |
+| 2 / P1 | 开发完成 | 服务持有唯一接待与声音，零界面绑定继续运行；`ec731e4` |
+| 3 / P2 | 开发完成；现场部分完成 | 独立来电页、锁屏及不可用交互；`bbf4051`；后续自动展示/实时权限修复 `9569d89`，目标平板米家前台和息屏样本通过 |
+| 4 / P3 | App 恢复开发完成；系统地址持久化未解决 | 退避、启动/电源恢复 `6fa9a1f`，发现回复固定门禁源地址 `d91814c`；真机重启服务自动运行，但门禁地址丢失 |
+| 5 / P4 | 开发完成；真实输入覆盖部分完成 | 默认 3 分钟、可配 1～30 分钟或关闭、独立操作检测；`bbdbf31`；真机 1 分钟米家返回/续时和暗屏规则通过 |
+| 6 / P5 | 本地完成；现场部分完成 | 结构/性能复核、83 JVM、9 Python、两系统 73 项设备回归；最新三项上行测试及竞态修复见[本地验证](../../runbooks/intercom-local-uplink-validation-2026-11-15.md)；24/72 小时未开始 |
+| 7 / P6 | 未开始 | 核心接待现场验收通过后再开发人脸感知与无人低亮待机 |
 
 **Baseline:** `c65ddbe`，评估起点工作区干净；来电、米家入口、九种主题和当前界面已提交。该基线仍由 MainActivity 创建/停止连接，没有上述新服务或独立来电 Activity，当时尚无 androidTest 目录。基线核查以 JDK 17 离线重跑：56 项 JVM 无失败/无跳过，9 项 Python 通过，Debug/Release Lint 均为 0 问题；当时未安装现场平板或进行真实门机操作。
 
@@ -115,7 +125,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 - [x] **Step 1: 写失败用例。** 覆盖旧通知/计时器、单向收听、视频降级、不确定开锁和不可用恢复入口。新增 `callOverExternalAppReturnsToExternalApp`、`themeRecreationPreservesListenerAndSettingsSection`、`lockedBootCallUsesDefaultThemeWithoutAppearanceRead`、`networkIconsRemainNonInteractive`：来电结束回米家而非强制首页，九种主题不影响监听，首次解锁前不读取 appearance，网络图标不变操作入口。
 - [x] **Step 2: 验证失败。** 在 API 31/36 隔离模拟器运行测试；授权状态与门禁传输使用测试配置，不触碰真实门锁。
-- [x] **Step 3: 整体搬迁来电交互。** 搬迁现有 renderCall/按钮/权限方法，复用 page_call、MedioraUi 和主题资源；正常解锁后按 Appearance 应用主题，首次解锁前使用默认资源。来电页采用通知临时 Activity 的独立任务：空 taskAffinity、excludeFromRecents、singleTask，启动使用 NEW_TASK/CLEAR_TOP/SINGLE_TOP，并按 CallKey 去重；复用通知不使用 CLEAR_TASK，防止旧通知在标识校验前销毁新来电界面；关闭只结束临时任务，回原前台/锁屏，不强制拉起主页面。继续使用当前稳定 insets 做法。主页面保留 settings_section、settings_dialog 与草稿恢复；删除旧来电页和资源字段。故障反馈加在本机与网络/对应页面，不新增顶层分组或点击网络图标。
+- [x] **Step 3: 整体搬迁来电交互。** 搬迁现有 renderCall/按钮/权限方法，复用 page_call、MedioraUi 和主题资源；正常解锁后按 Appearance 应用主题，首次解锁前使用默认资源。来电页采用通知临时 Activity 的独立任务：空 taskAffinity、excludeFromRecents、singleTask，启动使用 NEW_TASK/CLEAR_TOP/SINGLE_TOP，并按 CallKey 去重；复用通知不使用 CLEAR_TASK，防止旧通知在标识校验前销毁新来电界面；关闭只结束临时任务，回原前台/锁屏，不强制拉起主页面。继续使用当前稳定 insets 做法。主页面保留 settings_section、settings_dialog 与草稿恢复；删除旧来电页和资源字段。故障反馈复用终端与接待、设备与网络或当前来电页的对应位置，不新增顶层分组或点击网络图标。
 - [x] **Step 4: 验证交互矩阵。** 覆盖 A01～A12、C01～C18、M01～M07、O01～O08；在九种主题与系统菜单展开时检验来电页尺寸、对比、稳定边距和控件状态。监控结束不重开、四分组/草稿可恢复、米家缺失保留已有提示；解锁前后主题读取安全。3 秒异常说明仅保留本次界面，不阻断下一通，重复打开不重建监听。
 - [x] **Step 5: 清理并提交。** MainActivity 不再存在来电页渲染/权限回调的第二实现；状态文案只有一份事实来源，建议 `refactor: isolate lockscreen call interaction and recovery feedback`。
 
@@ -143,7 +153,7 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 
 **Interfaces:** AppSettings 增加 `isIdleReturnEnabled(): Boolean`、`idleReturnMinutes(): Int`、`saveIdleReturn(enabled: Boolean, minutes: Int): Boolean`；默认意图开启、3 分钟，取值 1～30。UserInteractionService 是独立系统无障碍入口，必要计时函数留在同文件，使用已有 SessionScheduler 验证；订阅现有门禁服务的通话投影，不拥有连接。开关/时长保存在普通私有偏好，首次解锁前不读取；关闭或授权失败都不调用 AppConnection.stop。
 
-**执行调整：** 本轮按用户要求先完成本地开发，暂不安装到现场平板。以下步骤的完成状态只代表本地实现、隔离模拟器和代码审查；目标 MatePad 的安装、手动授权、米家/键盘/按键/系统菜单覆盖与 R01～R10 现场验收保留到任务 6，不将模拟器事件等同全局真实输入。公开事件对部分自绘或空白区域不能保证上报，界面须明确说明。
+**执行调整（任务 5 当时）：** 按用户要求先完成本地开发，未在本任务阶段安装平板。以下步骤勾选代表本地实现、隔离模拟器和代码审查；后续用户授权的安装、手动授权及部分米家操作验证已在任务 6 记录。键盘/按键/系统菜单和 R01～R10 的完整现场覆盖仍待完成，不将模拟器事件等同全局真实输入。公开事件对部分自绘或空白区域不能保证上报，界面已说明支持边界。
 
 - [x] **Step 1: 本地能力探测与失败用例。** 验证系统服务的元数据、常规触摸保持及隔离模拟器的外部设置操作/回前台；目标机输入覆盖按上述调整后移。编写 `returnsOnceAfterThreeMinuteExternalIdle`、`interactionAt179999RestartsDeadline`、`ownPagesNeverAutoNavigate`、`windowRefreshDoesNotCountAsUserInput`、`disabledOrUnauthorizedNeverReturns`、`lockedDeadlineWaitsForNormalUnlock`、`activeCallSuspendsReturn`、`failedForegroundStartDoesNotLoop`、`serviceRecoveryStartsFreshDeadline`，并用真实任务复用用例验证不重启监听；断言 179999 毫秒不返回、180000 毫秒只返回一次、操作后完整重计。
 - [x] **Step 2: 验证失败与支持范围。** 运行 `./gradlew :app:testDebugUnitTest --tests '*IdleReturnTest'` 和对应设备用例。全局输入探测必须使用目标机事件证据；不能用 MainActivity.onUserInteraction 或固定延时假装其他应用的操作检测。未可靠覆盖的交互记录为受限，先解决实际能力再宣称该功能通过。
@@ -164,7 +174,19 @@ AppConnection 对外继续使用具体方法：`start(options)`、`stop()`、`op
 - [x] **Step 4: 按实测处理性能。** 网络地址就绪后恢复目标 5 秒，完整合法来电收到后铃声/展示目标 2 秒。先记录控制队列与 JPEG 解码耗时；只有实测控制响应不满足目标，才把现有解码移到一个有界工作队列，并直接更新现有 JpegAssembler/会话观察接口和测试，成功解码才刷新健康时间，不长期保留两套路径。当前监控“仅交付最新帧”做法复用于来电。
 - [ ] **Step 5: 稳定性与交付。** 先完成 24 小时，再完成 72 小时观察，包含可追溯测试来电、息屏、米家长时间前台、用户持续操作不被抢占、闲置返回、网络/电源变化。未通过的真实接待、地址恢复、声音、门锁或自动返回先修复，不能以回放替代，也不能进入人脸阶段。保持历史界面记录时间边界，更新实际能力说明，建议 `docs: record dedicated intercom acceptance and operation`。
 
-**当前结论（2026-11-15）：** 代码与本地回归已完成。用户随后已授权安装，目标 MatePad 完成样本来电、真实米家前台/息屏展示、部分闲置操作、重启自动启动及真实单元门/地库 2 监控检查；这些不等于真实门机来电、双向声音、物理开锁或到梯通过。重启后临时门禁地址丢失已确认，持久地址、网口拔插/有线启动恢复及 24/72 小时观察尚未通过，因此第 3、5 步继续不勾选，任务 7 不启动。详见验收记录及其当日真机记录。
+**Step 3 已完成的部分（整体仍未通过）：**
+
+- [x] 目标平板覆盖安装、原配置保留、四个设置分组、12 字段、九种主题、方正图标、共享留白、普通键盘与竖屏大字体检查。
+- [x] 目标平板演示来电自动覆盖真实米家前台及系统息屏、结束返回原应用、监控打断、接待停启及强停后显式打开；厂商后台弹窗已实际开启。
+- [x] 真机 1 分钟闲置返回、消息中心操作续时、关闭及暗屏到期不唤醒；操作检测实际绑定，已恢复默认 3 分钟。默认时长实测和完整输入覆盖仍待完成。
+- [x] 真机重启后无需手动打开主界面，接待与检测服务自动运行、原设置保留；首次观测已解锁，不能作为首次解锁前或有线地址恢复验收。
+- [x] 临时门禁地址就绪后，实际单元门/地库 2 监控、提前退出、单元门约 30 秒结束及地库 1 两次实际占线；网口与 USB 供电同时可用已观察。
+- [x] 真机米家前台和息屏切换时同一接待进程、三个 Socket inode 保持；系统 IP 持久化阻断已定位至权限限制，当前没有或不确定受支持的授权/DHCP 管理途径。
+- [x] 记录用户旧包真实来电可显示、接听、开锁操作、挂断及下行可听的反馈；晚间 `539bed…` 包已安装，演示铃声可听且保留 14/15，离线呼梯回应约 5 秒恢复。
+
+**最新本地完成内容：** `bc290ec` 修复挂断期间已排队的音频重试重启录音，新增采集到传输、仅重试声音不重复接听、挂断竞态三项检查；83 JVM、9 Python、Debug/Release/测试包构建及两种 Lint 无错误，API 31 完整 73/73 后加强测试屏障并另跑三项 3/3，API 36 最终完整 73/73，均零跳过。已完成多轮专题和独立全量复审，Release 不含私有样本；详见[上行链路本地验证](../../runbooks/intercom-local-uplink-validation-2026-11-15.md)。最新包 `ec3ec…` 尚未安装平板，不能将该修复认定为现场上行无声的原因或解法。
+
+**剩余与顺序：** 系统门禁 IP 持久化和网口重插/有线启动恢复未解决；真实来电的前后台/锁屏等完整矩阵、上行声音和双方听音、物理门锁/到梯、默认 3 分钟及其余输入覆盖仍待现场。先完成这些核心条件，再执行 24/72 小时观察；任务 6 第 3、5 步继续不勾选，任务 7 不启动。细节见[离线验证](../../runbooks/tablet-offline-validation-2026-11-14.md)、[有线验证](../../runbooks/tablet-live-validation-2026-11-14.md)和[声音记录](../../runbooks/tablet-audio-validation-2026-11-15.md)。
 
 ## Task 7: P6 在稳定接待上加入感知与低亮待机
 

@@ -159,6 +159,105 @@ class IncomingCallInteractionTest {
         }
     }
 
+    @Test fun expiredInitialPresentationDoesNotWakeWhileValidationIsPending() = pendingScreenWake(reusePage = false, activeCall = false)
+    @Test fun expiredReusedPresentationDoesNotWakeWhileValidationIsPending() = pendingScreenWake(reusePage = true, activeCall = false)
+    @Test fun validReusedPresentationWakesOnlyAfterValidation() = pendingScreenWake(reusePage = true, activeCall = true)
+
+    @Test fun leavingDuringValidationDoesNotRetainTheHiddenPagesSubscription() = RunningIntercom().use { fixture ->
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = awaitCall { fixture.owner.simulateIncoming() }
+        val key = requireNotNull(fixture.owner.currentState.callKey)
+        showExternalSettings(fixture)
+        val observers = AppConnection::class.java.getDeclaredField("observers").apply { isAccessible = true }
+            .get(fixture.owner) as Set<*>
+        val backgroundObservers = observers.size
+        val worker = AppConnection::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(fixture.owner) as android.os.Handler
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val checked = CountDownLatch(1)
+        worker.post { blocked.countDown(); release.await(15, TimeUnit.SECONDS) }
+        try {
+            assertTrue(blocked.await(2, TimeUnit.SECONDS))
+            val shown = awaitCall { instrumentation.runOnMainSync {
+                activity.startActivity(IncomingCallActivity.createIntent(fixture.context, key))
+            } }
+            instrumentation.runOnMainSync {
+                assertFalse("Call controls must wait for validation", shown.findViewById<android.view.View>(R.id.call_action).isEnabled)
+            }
+            showExternalSettings(fixture)
+            fixture.owner.checkDeadlines { checked.countDown() }
+            release.countDown()
+            assertTrue("Pending validation did not complete", checked.await(3, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            assertEquals("A hidden page retained its synchronous initial subscription", backgroundObservers, observers.size)
+            assertEquals(key, fixture.owner.currentState.callKey)
+            assertTrue(fixture.owner.currentState.inCall)
+            assertEquals("com.android.settings", instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString())
+        } finally { release.countDown() }
+    }
+
+    private fun pendingScreenWake(reusePage: Boolean, activeCall: Boolean) = RunningIntercom().use { fixture ->
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = ActivityLifecycleMonitorRegistry.getInstance()
+        val power = fixture.context.getSystemService(android.os.PowerManager::class.java)
+        var requested = CallKey("expired-previous-run", 1)
+        if (reusePage) {
+            awaitCall { fixture.owner.simulateIncoming() }
+            requested = requireNotNull(fixture.owner.currentState.callKey)
+        }
+        showExternalSettings(fixture)
+        if (reusePage && !activeCall) {
+            fixture.owner.hangUpCall(requested)
+            awaitState(fixture.owner) { !it.inCall }
+        }
+        val worker = AppConnection::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(fixture.owner) as android.os.Handler
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val presented = CountDownLatch(1)
+        var shown: IncomingCallActivity? = null
+        val callback = ActivityLifecycleCallback { activity, stage ->
+            if (activity is IncomingCallActivity && stage == Stage.STARTED) {
+                shown = activity
+                presented.countDown()
+            }
+        }
+        instrumentation.runOnMainSync { monitor.addLifecycleCallback(callback) }
+        try {
+            // SystemUI can wake for a live full-screen notification independently of this
+            // page. Disable that channel to isolate the activity's own wake permission.
+            if (activeCall) setCallChannelEnabled(fixture, false)
+            worker.post { blocked.countDown(); release.await(15, TimeUnit.SECONDS) }
+            assertTrue("Could not queue the owner validation", blocked.await(2, TimeUnit.SECONDS))
+            fixture.shell("input keyevent KEYCODE_SLEEP")
+            assertFalse("The display must be off before presentation", power.isInteractive)
+            fixture.context.startActivity(IncomingCallActivity.createIntent(fixture.context, requested))
+            assertTrue("Call presentation was not started", presented.await(3, TimeUnit.SECONDS))
+            val waitingUntil = android.os.SystemClock.elapsedRealtime() + 1500
+            do {
+                assertFalse("Unvalidated call presentation woke the display", power.isInteractive)
+                android.os.SystemClock.sleep(20)
+            } while (android.os.SystemClock.elapsedRealtime() < waitingUntil)
+            release.countDown()
+            val settledUntil = android.os.SystemClock.elapsedRealtime() + 4000
+            var settled = false
+            while (!settled && android.os.SystemClock.elapsedRealtime() < settledUntil) {
+                instrumentation.runOnMainSync {
+                    settled = if (activeCall) power.isInteractive && shown?.findViewById<android.view.View>(R.id.call_action)?.isEnabled == true
+                        else shown?.isFinishing == true || shown?.isDestroyed == true
+                }
+                if (!settled) android.os.SystemClock.sleep(20)
+            }
+            assertTrue(if (activeCall) "Validated call did not wake and enable its controls" else "Expired presentation did not close", settled)
+            if (!activeCall) assertFalse("Expired presentation woke after validation", power.isInteractive)
+        } finally {
+            release.countDown()
+            instrumentation.runOnMainSync { monitor.removeLifecycleCallback(callback) }
+            fixture.shell("input keyevent KEYCODE_WAKEUP")
+            fixture.shell("wm dismiss-keyguard")
+            if (activeCall) setCallChannelEnabled(fixture, true)
+        }
+    }
+
     @Test fun disablingCallChannelWhileBackgroundedPreventsAutomaticPresentation() = RunningIntercom().use { fixture ->
         showExternalSettings(fixture)
         assertTrue(fixture.owner.currentState.fullScreenAllowed)

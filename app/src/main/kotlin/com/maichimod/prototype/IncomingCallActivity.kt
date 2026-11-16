@@ -37,6 +37,7 @@ class IncomingCallActivity : Activity() {
     private var bound = false
     private var started = false
     private var resumed = false
+    private var awaitingValidation = true
     private var key: CallKey? = null
     private var validatedKey: CallKey? = null
     private var state = IntercomState(enabled = false)
@@ -54,19 +55,21 @@ class IncomingCallActivity : Activity() {
     private var backCallback: OnBackInvokedCallback? = null
     private val binding = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            if (!started) return
+            if (isFinishing || (!started && !awaitingValidation)) return
             val owner = (binder as IntercomService.LocalBinder).service
             owner.connection.checkDeadlines {
-                if (!started || !bound) return@checkDeadlines
+                if (isFinishing || !bound || (!started && !awaitingValidation)) return@checkDeadlines
                 service = owner
                 owner.refreshAvailability()
                 subscription?.cancel()
-                subscription = owner.connection.observe(object : IntercomObserver {
+                val observed = owner.connection.observe(object : IntercomObserver {
                     override fun onState(updated: IntercomState) { state = updated; render() }
                     override fun onCallFrame(frame: android.graphics.Bitmap) {
                         if (state.callKey == key && state.inCall) preview.setImageBitmap(frame)
                     }
                 })
+                // observe delivers its first state synchronously; render may already detach.
+                if (bound && service === owner && !isFinishing) subscription = observed else observed.cancel()
             }
         }
         override fun onServiceDisconnected(name: ComponentName) {
@@ -98,7 +101,7 @@ class IncomingCallActivity : Activity() {
         MedioraUi.applySurface(findViewById(R.id.call_video_frame), SurfaceRole.OUTLINE)
         preview.clipToOutline = true
         volumeControlStream = AudioManager.STREAM_VOICE_CALL
-        allowLockedPresentation(true)
+        allowLockedPresentation(false)
         findViewById<View>(R.id.call_back).setOnClickListener { finishCall() }
         findViewById<View>(R.id.call_action).setOnClickListener {
             if (state.call == CallStatus.RINGING) requestAudio(false) else if (state.call == CallStatus.ANSWERED) finishCall()
@@ -130,7 +133,8 @@ class IncomingCallActivity : Activity() {
         UserInteractionService.activityVisible(this, true)
         openedAt = SystemClock.elapsedRealtime()
         IntercomService.ensureStarted(this)
-        bound = bindService(Intent(this, IntercomService::class.java), binding, Context.BIND_AUTO_CREATE)
+        if (!bound) bound = bindService(Intent(this, IntercomService::class.java), binding, Context.BIND_AUTO_CREATE)
+        else render()
     }
 
     override fun onResume() {
@@ -149,25 +153,36 @@ class IncomingCallActivity : Activity() {
         started = false
         UserInteractionService.activityVisible(this, false)
         queuedAudioAction = null
-        subscription?.cancel(); subscription = null
-        if (bound) unbindService(binding)
-        bound = false; service = null
-        if (::preview.isInitialized) preview.removeCallbacks(tick)
+        // A sleeping display may stop the page before its owner can validate it. Keep only
+        // that pending check alive; an ordinary backgrounded call page still unsubscribes.
+        if (!awaitingValidation || isFinishing) {
+            detachService()
+            if (::preview.isInitialized) preview.removeCallbacks(tick)
+        }
         allowLockedPresentation(false)
         super.onStop()
     }
 
     override fun onDestroy() {
+        detachService()
+        if (::preview.isInitialized) preview.removeCallbacks(tick)
         if (Build.VERSION.SDK_INT >= 33) backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         super.onDestroy()
+    }
+
+    private fun detachService() {
+        subscription?.cancel(); subscription = null
+        if (bound) unbindService(binding)
+        bound = false; service = null
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         deferPresentation(intent)
         openedAt = SystemClock.elapsedRealtime()
-        allowLockedPresentation(true)
-        if (::preview.isInitialized) render()
+        awaitingValidation = true
+        allowLockedPresentation(false)
+        if (started && ::preview.isInitialized) render()
     }
 
     private fun deferPresentation(incoming: Intent) {
@@ -207,9 +222,13 @@ class IncomingCallActivity : Activity() {
             findViewById<TextView>(R.id.call_state).setText(R.string.reception_restoring)
             disableActions()
             val remaining = openedAt + 5000 - SystemClock.elapsedRealtime()
-            if (remaining <= 0) finishAndRemoveTask() else preview.postDelayed(tick, remaining)
+            if (remaining <= 0) { awaitingValidation = false; finishAndRemoveTask() }
+            else preview.postDelayed(tick, remaining)
             return
         }
+        val resumeAfterValidation = awaitingValidation && !started &&
+            !getSystemService(android.os.PowerManager::class.java).isInteractive
+        awaitingValidation = false
         if (state.callKey == key) validatedKey = key
         // Only the checked current key can supply an action. Stale notifications cannot replace it.
         val pending = deferredIntents[state.callKey]
@@ -247,6 +266,17 @@ class IncomingCallActivity : Activity() {
             preview.postDelayed(tick, remaining)
             return
         }
+        if (!started) {
+            if (resumeAfterValidation) {
+                // Turn-screen-on is evaluated when Android resumes the page, so resume only
+                // after the sleeping page's pending key/deadline check has accepted this call.
+                allowLockedPresentation(true)
+                try { startActivity(createIntent(this, requireNotNull(key))) }
+                catch (_: RuntimeException) { finishAndRemoveTask() }
+            } else detachService()
+            return
+        }
+        allowLockedPresentation(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val title = getString(if (state.call == CallStatus.ANSWERED) R.string.call_answered else R.string.call_ringing)
         val label = if (state.options.wired) title else getString(R.string.call_sample, title)

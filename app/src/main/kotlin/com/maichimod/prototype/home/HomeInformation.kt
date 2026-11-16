@@ -18,7 +18,9 @@ internal data class WeatherSelection(val city: String?, val today: DailyWeather?
 
 internal fun shouldRefreshCainiao(version: String?, code: Long, visible: Boolean, now: Long, last: Long, returning: Boolean): Boolean {
     if (!visible || version != "8.11.1105" || code != 478L) return false
-    if (last == 0L) return true
+    // The controller persists now before broadcasting, so a corrected clock gets one recovery
+    // refresh followed by the normal cooldown instead of waiting for an obsolete future time.
+    if (last == 0L || last > now) return true
     return now - last >= if (returning) 30_000 else 1_800_000
 }
 

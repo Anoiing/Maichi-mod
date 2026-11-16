@@ -1,7 +1,5 @@
 package com.maichimod.prototype
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
@@ -84,7 +82,17 @@ class AppConnectionTest {
 
     @Test fun observerReceivesCurrentStateAndCanDetach() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val connection = AppConnection(ApplicationProvider.getApplicationContext<Context>())
+        val ctx = IsolatedContext()
+        // Subscription delivery does not depend on decoding the large replay assets on a cold device.
+        val connection = AppConnection(ctx, openEthernet = { _, _, _ ->
+            object : com.maichimod.prototype.transport.DatagramTransport {
+                override fun send(localPort: Int, destination: java.net.Inet4Address, payload: ByteArray) = Unit
+                override fun close() = Unit
+            }
+        }, openLinks = { _, _, _, changed ->
+            changed(com.maichimod.prototype.transport.EthernetState(testLink()))
+            java.io.Closeable { }
+        })
         var callbacks = 0
         var onMain = false
         val ready = CountDownLatch(1)
@@ -100,7 +108,7 @@ class AppConnectionTest {
             assertEquals(1, callbacks)
         }
         try {
-            connection.start(ConnectionOptions(wired = false, simulateTimeout = true))
+            connection.start(wiredTestOptions().copy(simulateTimeout = true))
             assertTrue(ready.await(5, TimeUnit.SECONDS))
             instrumentation.runOnMainSync {
                 assertTrue(onMain)
@@ -114,6 +122,6 @@ class AppConnectionTest {
             instrumentation.runOnMainSync { android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ barrier.countDown() }, 150) }
             assertTrue(barrier.await(2, TimeUnit.SECONDS))
             assertEquals(count, callbacks)
-        } finally { connection.close() }
+        } finally { connection.close(); ctx.clear() }
     }
 }

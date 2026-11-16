@@ -30,7 +30,27 @@ class HomeInformationTest {
         assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 1_800_000, false))
         assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 29_999, true))
         assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, time, time - 30_000, true))
-        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, time, time + 1000, true))
+    }
+
+    @Test fun clockCorrectionRecoversScheduledRefreshAndRestartsItsCooldown() {
+        val corrected = now.toEpochMilli()
+        val future = now.plusSeconds(7 * 86400).toEpochMilli()
+        assertTrue("A persisted future timestamp must not block refresh for seven days",
+            shouldRefreshCainiao("8.11.1105", 478, true, corrected, future, false))
+        // The controller persists the corrected time before sending the recovery refresh.
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, corrected, corrected, false))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, corrected + 1_799_999, corrected, false))
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, corrected + 1_800_000, corrected, false))
+    }
+
+    @Test fun clockCorrectionRecoversReturnRefreshWithoutBypassingVisibilityOrVersion() {
+        val corrected = now.toEpochMilli()
+        val future = corrected + 1000
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, corrected, future, true))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, true, corrected + 29_999, corrected, true))
+        assertTrue(shouldRefreshCainiao("8.11.1105", 478, true, corrected + 30_000, corrected, true))
+        assertFalse(shouldRefreshCainiao("8.11.1105", 478, false, corrected, future, true))
+        assertFalse(shouldRefreshCainiao("8.11.1106", 479, true, corrected, future, true))
     }
 
     @Test fun countsRequirePickupSemanticsAndNeverConvertUnknownToZero() {
